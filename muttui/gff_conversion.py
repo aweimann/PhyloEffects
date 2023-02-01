@@ -3,6 +3,7 @@
 from io import StringIO
 from Bio import SeqIO
 import gffutils as gff
+import pyranges
 
 #Clean other "##" starting lines from gff file, as it confuses parsers
 #Taken from prokka.py in Panaroo
@@ -38,22 +39,24 @@ def convertGFF(gff_file_name):
                                 dbfn = ":memory:",
                                 force = True,
                                 keep_order = True,
+                               merge_strategy="create_unique",
+                               sort_attribute_values=True,
                                 from_string = True)
     
-    geneCoordinates = dict()
-    geneDict = dict()
+    gene_annotation = {} 
     
+    pyr_chr, pyr_start, pyr_stop, pyr_strand, pyr_id = [[] for i in range(5)]
     for entry in parsed_gff.all_features(featuretype = ()):
-        if "CDS" not in entry.featuretype:
-            continue
-        else:
-            #add stop codon to coordinates
-            geneCoordinates[entry.id] = [entry.start, entry.stop, entry.strand, entry.attributes['locus'][0]]
-            for position in range(entry.start, (entry.stop + 1)):
-                #If the position is in overlapping genes, all genes will be included separated by ____
-                if position in geneDict:
-                    geneDict[position] = geneDict[position] + "____" + entry.id
-                else:
-                    geneDict[position] = entry.id
+        if entry.featuretype != "gene" and entry.featuretype != "pseudogene" and entry.featuretype != "region":
+            if not 'locus_tag' in entry.attributes and not 'locus' in entry.attributes:
+                continue
+            gene_annotation[entry.id] = [entry.start, entry.stop, entry.strand, entry.attributes['locus'][0], entry.featuretype]
+            #add stop codon to coordinates? (entry.stop + 1)
+            pyr_chr.append(entry.seqid)
+            pyr_start.append(entry.start)
+            pyr_stop.append(entry.stop)
+            pyr_id.append(entry.id)
 
-    return(geneCoordinates, geneDict)
+    gene_ranges = pyranges.from_dict({"Chromosome": pyr_chr, "Start": pyr_start, "End": pyr_stop, "Id": pyr_id})
+
+    return(gene_annotation, gene_ranges)

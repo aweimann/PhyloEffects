@@ -238,6 +238,11 @@ def main():
             raise RuntimeError("GFF file needs to be provided with -g when using --strand_bias or --synonymous")
         else:
             geneCoordinates, positionGene = convertGFF(args.gff.name)
+            with open(args.output_dir + "gene_annotation.txt", 'w') as f:
+                #header
+                f.write("start\tend\tstrand\tlocus_tag\tfeature\n")
+                for value_list in geneCoordinates.values():
+                    f.write("\t".join([str(i) for i in value_list]) + "\n")
 
     #Label branches in the tree into categories, each category will have a separate spectrum
     if args.labels:
@@ -303,8 +308,12 @@ def main():
     #Iterate through the branches, get the category of the branch, identify the contextual mutations, add to the corresponding spectrum
     if args.synonymous:
         effects = open(args.output_dir + "variant_effect_predictions.txt", "w")
-        effects.write("\t".join(["node", "pos", "upstream_allele", "downstream_allele", "upstream_aa", "downstream_aa", "reference_aa", "upstream_codon", "downstream_codon", "reference_codon", "impact", "aa_change",  "multi_codon_substitution", "locus_tag", "pseudogene"]) + "\n")
+        effects.write("\t".join(["node", "pos", "upstream_allele", "downstream_allele", "mutation_type", "upstream_aa", "downstream_aa", "reference_aa", "upstream_codon", "downstream_codon", "reference_codon", "impact", "aa_change",  "multi_codon_substitution", "locus_tag", "pseudogene"]) + "\n")
         effects.close()
+        #get reference
+        ref = AlignIO.read(args.reference.name, "fasta")
+        #Extract the sequence of the reference and ensure it is uppercase
+        refSeq = ref[0].seq.upper()
     for clade in labelledTree.find_clades():
         #Check if there are mutations along the current branch, only need to analyse branches with mutations
         if clade.name in branchMutationDict:
@@ -336,7 +345,7 @@ def main():
 
                 #Check if only synonymous mutations should be included, if so filter the mutations
                 if args.synonymous:
-                    synonymous_substitution_dict = extractSynonymous(clade, branchMutations, updatedReference, referenceSequence, geneCoordinates, positionGene, args.output_dir)
+                    synonymous_substitution_dict = extractSynonymous(clade, branchMutations, updatedReference, refSeq, geneCoordinates, positionGene, args.output_dir)
                 for mutation in branchMutations:
                     if args.synonymous and mutation[2] in synonymous_substitution_dict:
                         continue
