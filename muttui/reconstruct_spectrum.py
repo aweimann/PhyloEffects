@@ -10,6 +10,9 @@ import pandas as pd
 import Bio.SeqIO as SeqIO
 from Bio.Seq import Seq
 from variant_effect import VariantEffect
+import time
+
+# write out effect TODO determine proximity to coding features nearby
 
 translation_table = np.array([[[b'K', b'N', b'K', b'N', b'X'],
                                [b'T', b'T', b'T', b'T', b'T'],
@@ -271,9 +274,9 @@ def extract_synonymous(clade, branch_mutations, updated_reference, reference_seq
 
     # intersect genes with variants
     var_chromosome, var_start, var_end, var_ref, var_alt = [[] for i in range(5)]
+    chromosome = position_gene.chromosomes[0]
     for i in branch_mutations:
-        # var_chromosome.append("chromosome")
-        var_chromosome.append(position_gene.chromosomes[0])
+        var_chromosome.append(chromosome)
         var_start.append(i[2])
         var_end.append(i[2] + 1)
         var_ref.append(i[0])
@@ -287,18 +290,18 @@ def extract_synonymous(clade, branch_mutations, updated_reference, reference_seq
     node = str(clade)
     if knearest.shape[0] != 0:
         genes_us = knearest.query('Distance < 0').assign(
-            left=lambda x: x.groupby('Start').transform('max')['Distance']).query('Distance == left')
+            left=lambda x: x.groupby('Start')['Distance'].transform('max')).query('Distance == left')
         genes_ds = knearest.query('Distance > 0').assign(
-            right=lambda x: x.groupby('Start').transform('min')['Distance']).query('Distance == right')
+            right=lambda x: x.groupby('Start')['Distance'].transform('min')).query('Distance == right')
         genes_proximity = pd.concat([genes_us, genes_ds])
     aa_pos2effect = {}
     print("intergenic variants")
-    for i in genes_proximity.index:
-        gene_name = genes_proximity.loc[i, "Id"]
-        pos = str(genes_proximity.loc[i, "Start"])
+    for row_tuple in genes_proximity.itertuples():
+        gene_name = row_tuple.Id
+        pos = str(row_tuple.Start)
         variant_effect = VariantEffect(pos, node)
         variant_effect.impact = "MODIFIER"
-        distance = genes_proximity.loc[i, "Distance"]
+        distance = row_tuple.Distance
         if gene_coordinates[gene_name][2] == "+":
             if distance > 0:
                 mutation_type = "upstream_gene_variant"
@@ -312,47 +315,42 @@ def extract_synonymous(clade, branch_mutations, updated_reference, reference_seq
         variant_effect.mutation_type = mutation_type
 
         variant_effect.locus_tag = gene_coordinates[gene_name][3]
-        variant_effect.upstream_allele = genes_proximity.loc[i, "ref"]
-        variant_effect.downstream_allele = genes_proximity.loc[i, "alt"]
+        variant_effect.upstream_allele = row_tuple.ref
+        variant_effect.downstream_allele = row_tuple.alt
         aa_pos2effect["%s_%s" % (variant_effect.position, variant_effect.locus_tag)] = variant_effect
-    # 1) group by position to get all genes affected by this position
-    # Iterate through the mutations to create dictionaries of each gene that mutates along the branch
-    # with their nucleotide sequences pre and post mutations
-    print('first pass')
-    for pos_group in gene_overlaps.groupby("Start"):
+    print("first pass")
+    for row in gene_overlaps.itertuples():
         # for mutation in branchMutations:
-        # Check if the mutation is in a gene, if the position isn't in positionGene, the position is intergenic
-        mutation = [pos_group[1].iloc[0].loc["ref"], 0, pos_group[0], pos_group[1].iloc[0].loc["alt"]]
-        # if mutation[2] not in positionGene:
-        #    continue
+        mutation = [row.ref, 0, row.Start, row.alt]
+        gene_name = row.Id
         # Iterate through the genes the position is in, check if they are already present, mutate if so, if not
         # add to dictionaries and mutate
-        for match in pos_group[1].index:
-            gene_name = pos_group[1].loc[match, "Id"]
-            # Position of the mutation in the gene, zero based
-            position_in_gene = mutation[2] - gene_coordinates[gene_name][0]
-            if gene_name in downstream_genes:
-                downstream_genes[gene_name][position_in_gene] = mutation[3]
-            else:
-                upstream_genes[gene_name] = array.array("u", updated_reference[
-                                                            (gene_coordinates[gene_name][0] - 1):
-                                                            gene_coordinates[gene_name][
-                                                                1]])
-                reference_genes[gene_name] = array.array("u", reference_sequence[(gene_coordinates[gene_name][0] - 1):
-                                                                               gene_coordinates[gene_name][1]])
-                downstream_genes[gene_name] = array.array("u", updated_reference[(gene_coordinates[gene_name][0] - 1):
-                                                                               gene_coordinates[gene_name][
-                                                                                   1]])  # Mutate the position in the
-                # downstream gene downstream_genes[geneName][positionInGene] = mutation[3]
-                downstream_genes[gene_name][position_in_gene] = mutation[3]
+        # Position of the mutation in the gene, zero based
+        position_in_gene = mutation[2] - gene_coordinates[gene_name][0]
+        if gene_name in downstream_genes:
+            downstream_genes[gene_name][position_in_gene] = mutation[3]
+        else:
+            upstream_genes[gene_name] = array.array("u", updated_reference[
+                                                        (gene_coordinates[gene_name][0] - 1):
+                                                        gene_coordinates[gene_name][
+                                                            1]])
+            reference_genes[gene_name] = array.array("u", reference_sequence[(gene_coordinates[gene_name][0] - 1):
+                                                                           gene_coordinates[gene_name][1]])
+            downstream_genes[gene_name] = array.array("u", updated_reference[(gene_coordinates[gene_name][0] - 1):
+                                                                           gene_coordinates[gene_name][
+                                                                               1]])  # Mutate the position in the
+            # downstream gene downstream_genes[geneName][positionInGene] = mutation[3]
+            downstream_genes[gene_name][position_in_gene] = mutation[3]
 
     # Iterate through the mutations, check if the translated position of the mutation changes along the branch
     # Second iteration needed because 1st and 3rd codon positions may both change along a branch
     # dictionary aa position vs change
-    print('second pass')
     is_pseudogene = {}
-    for pos_group in gene_overlaps.groupby("Start"):
-        mutation = [pos_group[1].iloc[0].loc["ref"], 0, pos_group[0], pos_group[1].iloc[0].loc["alt"]]
+    start = time.time()
+    print('second pass')
+    for row in gene_overlaps.itertuples():
+        mutation = [row.ref, 0, row.Start, row.alt]
+        gene_name = row.Id
         # initialise fields for effect prediction
         # upstream_aa, downstream_aa, reference_aa, upstream_codon, downstream_codon, reference_codon, impact, \
         pos = str(mutation[2])
@@ -365,120 +363,116 @@ def extract_synonymous(clade, branch_mutations, updated_reference, reference_seq
         # Iterate through the genes the position is in, check if the position's amino acid changes, if so change
         # synonymous to False
         # for geneName in positionGene[mutation[2]].split("____"):
-        for match in pos_group[1].index:
-            gene_name = pos_group[1].loc[match, "Id"]
-            feature_type = gene_coordinates[gene_name][4]
-            variant_effect = VariantEffect(pos, node)
-            variant_effect.upstream_allele = upstream_allele
-            variant_effect.downstream_allele = downstream_allele
-            variant_effect.locus_tag = gene_coordinates[gene_name][3]
-            if feature_type != "CDS":
-                for match in pos_group[1].index:
-                    variant_effect.impact = "MODERATE"
-                    variant_effect.mutation_type = "non-coding_gene"
-                    gene_name = pos_group[1].loc[match, "Id"]
-                    synonymous = False
-                    aa_pos2effect[pos] = [variant_effect]
+        feature_type = gene_coordinates[gene_name][4]
+        variant_effect = VariantEffect(pos, node)
+        variant_effect.upstream_allele = upstream_allele
+        variant_effect.downstream_allele = downstream_allele
+        variant_effect.locus_tag = gene_coordinates[gene_name][3]
+        if feature_type != "CDS":
+            variant_effect.impact = "MODERATE"
+            variant_effect.mutation_type = "non-coding_gene"
+            synonymous = False
+            aa_pos2effect[pos] = variant_effect
+            continue
+        # Position of the mutation in the gene, zero based
+        # determine if this is a proper CDS otherwise set pseudogene flag
+        # TODO selenocysteine stop codon
+        # translate without the check cds flag
+        if gene_name not in upstream_aas:
+            try:
+                translate_sequence(upstream_genes[gene_name], gene_coordinates[gene_name][2], check_cds=True)
+            except Exception as err:
+                is_pseudogene[gene_name] = True
                 continue
-            # Position of the mutation in the gene, zero based
-            # determine if this is a proper CDS otherwise set pseudogene flag
-            # TODO selenocysteine stop codon
-            # translate without the check cds flag
-            if gene_name not in upstream_aas:
-                try:
-                    translate_sequence(upstream_genes[gene_name], gene_coordinates[gene_name][2], check_cds=True)
-                except Exception as err:
-                    is_pseudogene[gene_name] = True
-                    continue
-                upstream_aas[gene_name] = translate_sequence(upstream_genes[gene_name], gene_coordinates[gene_name][2])
-                reference_aas[gene_name] = translate_sequence(reference_genes[gene_name], gene_coordinates[gene_name][2])
-                downstream_aas[gene_name] = translate_sequence(downstream_genes[gene_name], gene_coordinates[gene_name][2])
-                # transcribe gene
-                if gene_coordinates[gene_name][2] == "+":
-                    rc_dss[gene_name] = Seq("".join(downstream_genes[gene_name]))
-                    rc_uss[gene_name] = Seq("".join(upstream_genes[gene_name]))
-                    rc_rss[gene_name] = Seq("".join(reference_genes[gene_name]))
-                else:
-                    # reverse complement
-                    rc_dss[gene_name] = Seq("".join(downstream_genes[gene_name])).reverse_complement()
-                    rc_uss[gene_name] = Seq("".join(upstream_genes[gene_name])).reverse_complement()
-                    rc_rss[gene_name] = Seq("".join(reference_genes[gene_name])).reverse_complement()
-            if gene_name in is_pseudogene:
-                variant_effect.pseudogene = "pseudogene"
-            # position in gene depending on what strand the cds is on
-            position_in_gene = mutation[2] - gene_coordinates[gene_name][0]
-            aa_position = extract_position(gene_coordinates[gene_name], position_in_gene) - 1
-            # extract codon
-            rc_ds = rc_dss[gene_name]
-            rc_us = rc_uss[gene_name]
-            rc_rs = rc_rss[gene_name]
-            variant_effect.reference_codon = rc_rs[(aa_position * 3): (aa_position * 3 + 3)]
-            variant_effect.upstream_codon = rc_us[(aa_position * 3): (aa_position * 3 + 3)]
-            variant_effect.downstream_codon = rc_ds[(aa_position * 3): (aa_position * 3 + 3)]
-            # amino acid at substitution position
-            variant_effect.reference_aa = reference_aas[gene_name][aa_position]
-            variant_effect.downstream_aa = downstream_aas[gene_name][aa_position]
-            variant_effect.upstream_aa = upstream_aas[gene_name][aa_position]
-            # check for start codon substitution, as we're using check_cds = False, non ATG start codons are
-            # translated into non methionine amino acids
-            if aa_position == 0:
-                if variant_effect.upstream_codon == "GTG" or variant_effect.upstream_codon == "TTG":
-                    variant_effect.upstream_aa = "M"
-                if variant_effect.downstream_codon == "GTG" or variant_effect.downstream_codon == "TTG":
-                    variant_effect.downstream_aa = "M"
-                if variant_effect.reference_codon == "GTG" or variant_effect.reference_codon == "TTG":
-                    variant_effect.reference_aa = "M"
-            # check if amino acid changed due to the current substitution
-            if variant_effect.upstream_aa != variant_effect.downstream_aa:
-                # stop codon -> different codon
-                if variant_effect.upstream_aa == "*":
-                    variant_effect.mutation_type = "stop_lost"
-                    downstream_aa3 = SeqUtils.IUPACData.protein_letters_1to3[variant_effect.downstream_aa]
-                    upstream_aa3 = "*"
-                    variant_effect.upstream_aa = "*"
-                    variant_effect.impact = "HIGH"
-                # stop codon inserted
-                elif variant_effect.downstream_aa == "*":
-                    variant_effect.mutation_type = "stop_gained"
-                    upstream_aa3 = SeqUtils.IUPACData.protein_letters_1to3[variant_effect.upstream_aa]
-                    downstream_aa3 = "*"
-                    variant_effect.downstream_aa = "*"
-                    variant_effect.impact = "HIGH"
-                else:
-                    # start codon -> different codon
-                    if aa_position == 0 and variant_effect.upstream_aa == "M" and variant_effect.downstream_aa != "M":
-                        variant_effect.impact = "HIGH"
-                        variant_effect.mutation_type = "start_lost"
-                    # regular non-synonymous SNP
-                    else:
-                        variant_effect.impact = "MODERATE"
-                        variant_effect.mutation_type = "missense_variant"
-                    downstream_aa3 = SeqUtils.IUPACData.protein_letters_1to3[variant_effect.downstream_aa]
-                    upstream_aa3 = SeqUtils.IUPACData.protein_letters_1to3[variant_effect.upstream_aa]
-                    aa_change = "p.%s%s%s" % (upstream_aa3, aa_position + 1, downstream_aa3)
-                    variant_effect.aa_change = aa_change
-                synonymous = False
-            # synonymous SNP
+            upstream_aas[gene_name] = translate_sequence(upstream_genes[gene_name], gene_coordinates[gene_name][2])
+            reference_aas[gene_name] = translate_sequence(reference_genes[gene_name], gene_coordinates[gene_name][2])
+            downstream_aas[gene_name] = translate_sequence(downstream_genes[gene_name], gene_coordinates[gene_name][2])
+            # transcribe gene
+            if gene_coordinates[gene_name][2] == "+":
+                rc_dss[gene_name] = Seq("".join(downstream_genes[gene_name]))
+                rc_uss[gene_name] = Seq("".join(upstream_genes[gene_name]))
+                rc_rss[gene_name] = Seq("".join(reference_genes[gene_name]))
             else:
-                variant_effect.impact = "LOW"
-                variant_effect.mutation_type = "synonymous_variant"
-            # account for codons mutated at different positions on the same branch
-            dict_key = "%s_%s_%s" % (node, variant_effect.locus_tag, aa_position + 1)
-            if dict_key in aa_pos2effect:
-                variant_effect.multi_codon_substitution = "multi_codon_substitution"
-                # correct position to beginning of the codon
-                if gene_coordinates[gene_name][2] == "+":
-                    pos = str(int(pos) - (position_in_gene % 3))
-                    variant_effect.upstream_allele = variant_effect.upstream_codon
-                    variant_effect.downstream_allele = variant_effect.downstream_codon
+                # reverse complement
+                rc_dss[gene_name] = Seq("".join(downstream_genes[gene_name])).reverse_complement()
+                rc_uss[gene_name] = Seq("".join(upstream_genes[gene_name])).reverse_complement()
+                rc_rss[gene_name] = Seq("".join(reference_genes[gene_name])).reverse_complement()
+        if gene_name in is_pseudogene:
+            variant_effect.pseudogene = "pseudogene"
+        # position in gene depending on what strand the cds is on
+        position_in_gene = mutation[2] - gene_coordinates[gene_name][0]
+        aa_position = extract_position(gene_coordinates[gene_name], position_in_gene) - 1
+        # extract codon
+        rc_ds = rc_dss[gene_name]
+        rc_us = rc_uss[gene_name]
+        rc_rs = rc_rss[gene_name]
+        variant_effect.reference_codon = rc_rs[(aa_position * 3): (aa_position * 3 + 3)]
+        variant_effect.upstream_codon = rc_us[(aa_position * 3): (aa_position * 3 + 3)]
+        variant_effect.downstream_codon = rc_ds[(aa_position * 3): (aa_position * 3 + 3)]
+        # amino acid at substitution position
+        variant_effect.reference_aa = reference_aas[gene_name][aa_position]
+        variant_effect.downstream_aa = downstream_aas[gene_name][aa_position]
+        variant_effect.upstream_aa = upstream_aas[gene_name][aa_position]
+        # check for start codon substitution, as we're using check_cds = False, non ATG start codons are
+        # translated into non methionine amino acids
+        if aa_position == 0:
+            if variant_effect.upstream_codon == "GTG" or variant_effect.upstream_codon == "TTG":
+                variant_effect.upstream_aa = "M"
+            if variant_effect.downstream_codon == "GTG" or variant_effect.downstream_codon == "TTG":
+                variant_effect.downstream_aa = "M"
+            if variant_effect.reference_codon == "GTG" or variant_effect.reference_codon == "TTG":
+                variant_effect.reference_aa = "M"
+        # check if amino acid changed due to the current substitution
+        if variant_effect.upstream_aa != variant_effect.downstream_aa:
+            # stop codon -> different codon
+            if variant_effect.upstream_aa == "*":
+                variant_effect.mutation_type = "stop_lost"
+                downstream_aa3 = SeqUtils.IUPACData.protein_letters_1to3[variant_effect.downstream_aa]
+                upstream_aa3 = "*"
+                variant_effect.upstream_aa = "*"
+                variant_effect.impact = "HIGH"
+            # stop codon inserted
+            elif variant_effect.downstream_aa == "*":
+                variant_effect.mutation_type = "stop_gained"
+                upstream_aa3 = SeqUtils.IUPACData.protein_letters_1to3[variant_effect.upstream_aa]
+                downstream_aa3 = "*"
+                variant_effect.downstream_aa = "*"
+                variant_effect.impact = "HIGH"
+            else:
+                # start codon -> different codon
+                if aa_position == 0 and variant_effect.upstream_aa == "M" and variant_effect.downstream_aa != "M":
+                    variant_effect.impact = "HIGH"
+                    variant_effect.mutation_type = "start_lost"
+                # regular non-synonymous SNP
                 else:
-                    pos = str(gene_coordinates[gene_name][1] - aa_position * 3 - 2)
-                    variant_effect.upstream_allele = variant_effect.upstream_codon.reverse_complement()
-                    variant_effect.downstream_allele = variant_effect.downstream_codon.reverse_complement()
-            aa_pos2effect[dict_key] = variant_effect
-            # If the mutation is nonsynonymous within any gene, remove it
-            if synonymous == False:
-                positions_to_remove.append(pos)
+                    variant_effect.impact = "MODERATE"
+                    variant_effect.mutation_type = "missense_variant"
+                downstream_aa3 = SeqUtils.IUPACData.protein_letters_1to3[variant_effect.downstream_aa]
+                upstream_aa3 = SeqUtils.IUPACData.protein_letters_1to3[variant_effect.upstream_aa]
+                aa_change = "p.%s%s%s" % (upstream_aa3, aa_position + 1, downstream_aa3)
+                variant_effect.aa_change = aa_change
+            synonymous = False
+        # synonymous SNP
+        else:
+            variant_effect.impact = "LOW"
+            variant_effect.mutation_type = "synonymous_variant"
+        # account for codons mutated at different positions on the same branch
+        dict_key = "%s_%s_%s" % (node, variant_effect.locus_tag, aa_position + 1)
+        if dict_key in aa_pos2effect:
+            variant_effect.multi_codon_substitution = "multi_codon_substitution"
+            # correct position to beginning of the codon
+            if gene_coordinates[gene_name][2] == "+":
+                pos = str(int(pos) - (position_in_gene % 3))
+                variant_effect.upstream_allele = variant_effect.upstream_codon
+                variant_effect.downstream_allele = variant_effect.downstream_codon
+            else:
+                pos = str(gene_coordinates[gene_name][1] - aa_position * 3 - 2)
+                variant_effect.upstream_allele = variant_effect.upstream_codon.reverse_complement()
+                variant_effect.downstream_allele = variant_effect.downstream_codon.reverse_complement()
+        aa_pos2effect[dict_key] = variant_effect
+        # If the mutation is nonsynonymous within any gene, remove it
+        if synonymous == False:
+            positions_to_remove.append(pos)
     # write effects to effect prediction out file
     for variant_effect in aa_pos2effect.values():
         effects.write(variant_effect.to_string() + "\n")
