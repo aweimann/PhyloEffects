@@ -248,7 +248,8 @@ def extract_position(gene_coordinates, position_in_gene):
 
 # Extracts synonymous mutations along a given branch
 # Used when --synonymous is specified
-def extract_synonymous(clade, branch_mutations, updated_reference, reference_sequence, gene_coordinates, position_gene,
+def extract_synonymous(clade, branch_mutations, updated_reference, reference_sequence,
+                       variant_effect2clades, gene_coordinates, position_gene,
                        output_dir):
     # Gene sequences at the upstream node
     upstream_genes = dict()
@@ -299,7 +300,7 @@ def extract_synonymous(clade, branch_mutations, updated_reference, reference_seq
     for row_tuple in genes_proximity.itertuples():
         gene_name = row_tuple.Id
         pos = str(row_tuple.Start)
-        variant_effect = VariantEffect(pos, node)
+        variant_effect = VariantEffect(pos, row_tuple.ref, row_tuple.alt, node)
         variant_effect.impact = "MODIFIER"
         distance = row_tuple.Distance
         if gene_coordinates[gene_name][2] == "+":
@@ -318,6 +319,10 @@ def extract_synonymous(clade, branch_mutations, updated_reference, reference_seq
         variant_effect.upstream_allele = row_tuple.ref
         variant_effect.downstream_allele = row_tuple.alt
         aa_pos2effect["%s_%s" % (variant_effect.position, variant_effect.locus_tag)] = variant_effect
+        if variant_effect not in variant_effect2clades:
+            variant_effect2clades[variant_effect] = [node]
+        else:
+            variant_effect2clades[variant_effect].append(node)
     print("first pass")
     for row in gene_overlaps.itertuples():
         # for mutation in branchMutations:
@@ -364,7 +369,7 @@ def extract_synonymous(clade, branch_mutations, updated_reference, reference_seq
         # synonymous to False
         # for geneName in positionGene[mutation[2]].split("____"):
         feature_type = gene_coordinates[gene_name][4]
-        variant_effect = VariantEffect(pos, node)
+        variant_effect = VariantEffect(pos, upstream_allele, downstream_allele, node)
         variant_effect.upstream_allele = upstream_allele
         variant_effect.downstream_allele = downstream_allele
         variant_effect.locus_tag = gene_coordinates[gene_name][3]
@@ -373,6 +378,10 @@ def extract_synonymous(clade, branch_mutations, updated_reference, reference_seq
             variant_effect.mutation_type = "non-coding_gene"
             synonymous = False
             aa_pos2effect[pos] = variant_effect
+            if variant_effect not in variant_effect2clades:
+                variant_effect2clades[variant_effect] = [node]
+            else:
+                variant_effect2clades[variant_effect].append(node)
             continue
         # Position of the mutation in the gene, zero based
         # determine if this is a proper CDS otherwise set pseudogene flag
@@ -470,12 +479,16 @@ def extract_synonymous(clade, branch_mutations, updated_reference, reference_seq
                 variant_effect.upstream_allele = variant_effect.upstream_codon.reverse_complement()
                 variant_effect.downstream_allele = variant_effect.downstream_codon.reverse_complement()
         aa_pos2effect[dict_key] = variant_effect
+        if variant_effect not in variant_effect2clades:
+            variant_effect2clades[variant_effect] = [node]
+        else:
+            variant_effect2clades[variant_effect].append(node)
         # If the mutation is nonsynonymous within any gene, remove it
         if synonymous == False:
             positions_to_remove.append(pos)
     # write effects to effect prediction out file
-    for variant_effect in aa_pos2effect.values():
-        effects.write(variant_effect.to_string() + "\n")
+    # for variant_effect in aa_pos2effect.values():
+    #    effects.write(variant_effect.to_string() + "\n")
 
     # Flag the positions that will not be included in the spectrum
     synonymous_substitution_dict = {}

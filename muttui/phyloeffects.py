@@ -5,7 +5,7 @@ import argparse
 import isvalid
 from treetime import run_treetime
 from Bio import AlignIO, Phylo, SeqIO
-import reconstruct_spectrum as rs
+import reconstruct_variant_effects as rs
 import gff_conversion
 
 from __init__ import __version__
@@ -125,12 +125,6 @@ def main():
     # Make sure trailing forward slash is present in output directory
     args.output_dir = os.path.join(args.output_dir, "")
 
-    # Open output files
-    out_mutations_not_used = open(args.output_dir + "mutations_not_included.csv", "w")
-    out_mutations_not_used.write("Mutation_in_alignment,Mutation_in_genome,Branch,Reason_not_included\n")
-
-    out_all_mutations = open(args.output_dir + "all_included_mutations.csv", "w")
-    out_all_mutations.write("Mutation_in_alignment,Mutation_in_genome,Substitution,Branch\n")
 
     if args.start_from_treetime:
         print("Running treetime ancestral reconstruction to identify mutations")
@@ -212,7 +206,6 @@ def main():
         ["node", "pos", "upstream_allele", "downstream_allele", "mutation_type", "upstream_aa", "downstream_aa",
          "reference_aa", "upstream_codon", "downstream_codon", "reference_codon", "impact", "aa_change",
          "multi_codon_substitution", "locus_tag", "pseudogene"]) + "\n")
-    effects.close()
     # Get the reference sequence, if -r specified this will be the provided genome, otherwise all sites in the
     # alignment are assumed
     # and the root sequence from the ancestral reconstruction is used
@@ -234,6 +227,7 @@ def main():
         for clade in clades:
             clade2name[clade] = clade
 
+    variant_effect2clades = {}
     for clade in clades:
         print(clade)
         # Check if there are mutations along the current branch, only need to analyse branches with mutations
@@ -242,28 +236,17 @@ def main():
             # Extract the mutations along the branch. This will be None if there are no mutations but treetime has
             # still added the mutation comment
             branch_mutations = branch_mutation_dict[clade2name[clade]]
-
-            # If using --branch_specific, check if the branch contains at least -bm mutations, if so
-            # add the branch to spectraDict. If not, set branchCategory to None so it won't be analysed
-
-            # Check if the branch has a category, will be None if the branch is a transition between categories
-            # and option --include_all_branches is not specified
-            # Extract double substitutions, remove mutations at the ends of the genome or not involving 2 nucleotides
-            if args.tree:
-                double_substitution_dict, double_substitutions = rs.filter_mutations(branch_mutations, clade, nucleotides,
-                                                                                     reference_length,
-                                                                                     out_mutations_not_used)
-
             # Update the reference sequence to get the current context
             if args.tree:
                 updated_reference = rs.updateReference(tree, clade, branch_mutation_dict, reference_sequence)
             else:
                 updated_reference = reference_sequence
-
-            # Check if only synonymous mutations should be included, if so filter the mutations
-            synonymous_substitution_dict = rs.extract_synonymous(clade, branch_mutations, updated_reference, ref_seq,
+            # infer variant effects
+            rs.extract_synonymous(clade, branch_mutations, updated_reference, ref_seq, variant_effect2clades,
                                                                  gene_coordinates, position_gene, args.output_dir)
 
 
+    for variant_effect, clades in variant_effect2clades.items():
+        effects.write(variant_effect.to_string() + ",".join(clades) + "\n")
 if __name__ == "__main__":
     main()
