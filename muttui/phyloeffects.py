@@ -1,14 +1,17 @@
 # Runs the MutTui pipeline on an input tree and alignment
 
-import os
 import argparse
-import isvalid
-from treetime import run_treetime
-from Bio import AlignIO, Phylo, SeqIO
-import reconstruct_variant_effects as rs
-import gff_conversion
+import os
+import sys
 
+import vcf
+from Bio import AlignIO, Phylo
+
+import gff_conversion
+import isvalid
+import reconstruct_variant_effects as rs
 from __init__ import __version__
+from treetime import run_treetime
 
 
 # Parse command line options
@@ -22,8 +25,19 @@ def get_options():
     io_opts.add_argument("-a",
                          "--alignment",
                          dest="alignment",
-                         required=True,
                          help="Input fasta alignment",
+                         type=argparse.FileType("r"))
+    io_opts.add_argument("-v",
+                         "--vcf",
+                         dest="vcf",
+                         required=False,
+                         help="Input VCF file",
+                         type=argparse.FileType("r"))
+    io_opts.add_argument("-vt",
+                         "--variant-table",
+                         dest="variant_table",
+                         required=False,
+                         help="variant table file",
                          type=argparse.FileType("r"))
     io_opts.add_argument("-t",
                          "--tree",
@@ -126,7 +140,7 @@ def main():
     args.output_dir = os.path.join(args.output_dir, "")
 
 
-    if args.start_from_treetime:
+    if not args.start_from_treetime:
         print("Running treetime ancestral reconstruction to identify mutations")
 
         # Check if the alignment is to be converted so gaps become Ns. If so, run the conversion
@@ -136,14 +150,14 @@ def main():
             run_treetime(open(args.output_dir + "gaps_to_N_alignment.fasta"), args.tree, args.output_dir,
                          args.add_treetime_cmds)
         else:
-            pass
             # Run treetime on the input alignment and tree with any provided options
-            run_treetime(args.alignment, args.tree, args.output_dir, args.add_treetime_cmds)
+            if args.tree:
+                run_treetime(args.alignment, args.tree, args.output_dir, args.add_treetime_cmds)
+                print("treetime reconstruction complete. Importing alignment from reconstruction and tree")
 
-        print("treetime reconstruction complete. Importing alignment from reconstruction and tree")
+                # Import the alignment from treetime
+                alignment = AlignIO.read(args.output_dir + "ancestral_sequences.fasta", "fasta")
 
-        # Import the alignment from treetime
-        alignment = AlignIO.read(args.output_dir + "ancestral_sequences.fasta", "fasta")
 
     else:
         if args.tree:
@@ -181,23 +195,38 @@ def main():
     # The 4 nucleotides, used to check if mutated, upstream and downstream bases are nucleotides
     nucleotides = ["A", "C", "G", "T"]
 
+    # get reference
+    ref = AlignIO.read(args.reference.name, "fasta")
     # Convert the positions in the alignment to genome positions, if --all_sites specified the positions will be the
     # same
     if args.all_sites:
         position_translation = rs.all_sites_translation(alignment)
-    else:
+    elif args.alignment:
         position_translation = rs.convertTranslation(args.conversion)
+    else:
+        position_translation = rs.all_sites_translation(ref)
 
-    # get reference
-    ref = AlignIO.read(args.reference.name, "fasta")
     # Extract the sequence of the reference and ensure it is uppercase
     ref_seq = ref[0].seq.upper()
     # Extracts mutations to a dictionary from the branch_mutations.txt file
-    if not args.tree:
-        branch_mutation_dict, clades = rs.get_mutations_from_alignment(args.alignment, ref_seq, position_translation)
-    else:
-        branch_mutation_dict = rs.get_branch_mutation_dict(args.treetime_out + "branch_mutations.txt",
+    if args.tree:
+        if args.start_from_treetime:
+            branch_mutation_dict = rs.get_branch_mutation_dict(args.treetime_out + "branch_mutations.txt",
                                                            position_translation)
+        else:
+            branch_mutation_dict = rs.get_branch_mutation_dict(args.output_dir + "branch_mutations.txt",
+                                                           position_translation)
+    elif args.alignment:
+        branch_mutation_dict, clades = rs.get_mutations_from_alignment(args.alignment, ref_seq, position_translation)
+    elif args.variant_table:
+        branch_mutation_dict, clades = rs.get_mutations_from_table(args.variant_table)
+    else:
+        if not args.vcf:
+            raise Exception()
+        else:
+            branch_mutation_dict, clades = rs.get_mutations_from_vcf(args.vcf)
+
+    print("Alignment/variants processed")
 
 
     # Iterate through the branches
@@ -210,7 +239,8 @@ def main():
     # alignment are assumed
     # and the root sequence from the ancestral reconstruction is used
     if not args.tree:
-        args.alignment.seek(0, 0)
+        if not vcf:
+            args.alignment.seek(0, 0)
         reference_sequence = AlignIO.read(args.reference.name, "fasta")
         reference_sequence = reference_sequence[0].seq.upper()
     else:
@@ -219,7 +249,6 @@ def main():
     clade2name = {}
     if args.tree:
         clades = tree.find_clades()
-    if args.tree:
         for clade in clades:
             clade2name[clade] = clade.name
         clades = tree.find_clades()
@@ -229,7 +258,6 @@ def main():
 
     variant_effect2clades = {}
     for clade in clades:
-        print(clade)
         # Check if there are mutations along the current branch, only need to analyse branches with mutations
         clade_name = clade2name[clade]
         if clade_name in branch_mutation_dict and len(branch_mutation_dict[clade_name]) != 0:
@@ -238,7 +266,7 @@ def main():
             branch_mutations = branch_mutation_dict[clade2name[clade]]
             # Update the reference sequence to get the current context
             if args.tree:
-                updated_reference = rs.updateReference(tree, clade, branch_mutation_dict, reference_sequence)
+                updated_reference = rs.update_reference(tree, clade, branch_mutation_dict, reference_sequence)
             else:
                 updated_reference = reference_sequence
             # infer variant effects
@@ -247,6 +275,6 @@ def main():
 
 
     for variant_effect, clades in variant_effect2clades.items():
-        effects.write(variant_effect.to_string() + ",".join(clades) + "\n")
+        effects.write(variant_effect.to_string() + "\t" + ",".join(clades) + "\n")
 if __name__ == "__main__":
     main()

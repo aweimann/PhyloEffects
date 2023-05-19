@@ -1,5 +1,6 @@
 # Takes the alignment and tree output by treetime and reconstructs the mutational spectrum
 
+from cyvcf2 import VCF
 from Bio import SeqUtils
 from Bio.Seq import Seq
 import numpy as np
@@ -12,7 +13,6 @@ from Bio.Seq import Seq
 from variant_effect import VariantEffect
 import time
 
-# write out effect TODO determine proximity to coding features nearby
 
 translation_table = np.array([[[b'K', b'N', b'K', b'N', b'X'],
                                [b'T', b'T', b'T', b'T', b'T'],
@@ -54,6 +54,8 @@ def convertTranslation(positionsFile):
     return conversion
 
 
+
+
 # Creates a positional translation dictionary with alignment sites as keys and values
 # Used when --all_sites is specified so there is no need to convert the sites
 def all_sites_translation(alignment):
@@ -75,8 +77,10 @@ def get_branch_mutation_dict(branchFile, translation):
         next(fileobject)
 
         for line in fileobject:
+            node, state1, pos, state2 = line.strip().split("\t")
+            if state1 == "-" or state2 == "-":
+                continue
             node = line.strip().split("\t")[0]
-
             if node in branchDict:
                 branchDict[node].append([line.strip().split("\t")[1], int(line.strip().split("\t")[2]),
                                          translation[int(line.strip().split("\t")[2])], line.strip().split("\t")[3]])
@@ -86,18 +90,47 @@ def get_branch_mutation_dict(branchFile, translation):
 
     return branchDict
 
+def get_mutations_from_table(variant_table):
+    """Parse a variant table into a dictionary of mutations."""
+    # parse header
+    clades = ["example"]
+    clade2mutation = {"example": []}
+    header = variant_table.readline().strip().split("\t")
+    for line in variant_table:
+        line = line.strip().split("\t")
+        ref, alt, pos = line[header.index("ref")], line[header.index("alt")], int(line[header.index("pos")])
+        # get length of reference allele
+        length = len(ref)
+        clade2mutation["example"].append((ref, pos + length - 1, pos, alt))
+    return clade2mutation, clades
+
+
+
+def get_mutations_from_vcf(vcf_path):
+    vcf = VCF(vcf_path)
+    clades = ["example"]
+    clade2mutation = {}
+    clade2mutation["example"] = []
+    variants = []
+    for record in vcf:
+        ref = record.REF
+        alt = record.ALT[0]
+        start = record.start
+        end = record.end
+        clade2mutation["example"].append((ref, start, start, alt))
+    return clade2mutation, clades
+
 
 def get_mutations_from_alignment(alignment, ref, translation):
     clade2mutations = {}
     clades = []
     for record in SeqIO.parse(alignment, "fasta"):
-        variants = []
         name = record.name
         clades.append(name)
         clade2mutations[name] = []
         for i, pos in zip(record.seq, range(1, len(record.seq) + 1)):
             j = ref[translation[pos] - 1]
-            if i != "N" and i != "-" and j != "N" and i.upper() != j.upper():
+            if i != "N" and i != "-" and j != "N" and j != "-" and i.upper() != j.upper():
                 clade2mutations[name].append((j, pos, translation[pos], i))
     return clade2mutations, clades
 
@@ -151,19 +184,19 @@ def get_reference(reference, all_sites, alignment, positionTranslation):
 # that mutated along an upstream branch to the mutated base
 # If a position has changed multiple times along the upstream branches, this keeps the most recent change as the
 # clades are iterated through from the root through to the most recent upstream branch
-def updateReference(tree, clade, branchMutationDict, refSeq):
+def update_reference(tree, clade, branch_mutation_dict, refSeq):
     # Convert the reference sequence to an array
-    referenceArray = array.array("u", refSeq)
+    reference_array = array.array("u", refSeq)
 
     # Iterate through the upstream branches leading to the node at the start of the current branch
     for upstreamClade in tree.get_path(clade)[:-1]:
         # Check if there are any mutations along the current upstream branch
-        if upstreamClade.name in branchMutationDict:
+        if upstreamClade.name in branch_mutation_dict:
             # Iterate through the previous mutations and update the reference sequence
-            for eachMutation in branchMutationDict[upstreamClade.name]:
-                referenceArray[eachMutation[2] - 1] = eachMutation[3]
+            for eachMutation in branch_mutation_dict[upstreamClade.name]:
+                reference_array[eachMutation[2] - 1] = eachMutation[3]
 
-    return "".join(referenceArray)
+    return "".join(reference_array)
 
 
 # Removes mutations that are at the start or end of the genome or do not involve 2 nucleotides
@@ -328,6 +361,39 @@ def extract_synonymous(clade, branch_mutations, updated_reference, reference_seq
         # for mutation in branchMutations:
         mutation = [row.ref, 0, row.Start, row.alt]
         gene_name = row.Id
+        # check if the mutation is an insertion or deletion
+        if len(row.alt) != len(row.ref):
+            # check if this is a frameshift mutation
+            variant_effect = VariantEffect(str(row.Start), row.ref, row.alt, node)
+            variant_effect.locus_tag = gene_coordinates[gene_name][3]
+            if (len(row.ref) - len(row.alt)) % 3 != 0:
+                variant_effect.impact = "HIGH"
+                variant_effect.mutation_type = "frameshift_variant"
+            # TODO check if this is a gene fusion
+            else:
+                variant_effect.impact = "MODERATE"
+                if gene_coordinates[row.Id][2] == "+":
+                    gene_start = gene_coordinates[row.Id][0]
+                else:
+                    gene_start = gene_coordinates[row.Id][1]
+                # check if this is a deletion
+                if len(row.ref) < len(row.alt):
+                    # check if this is a disruptive inframe insertion
+                    if (row.Start - gene_start) % 3 != 0:
+                        variant_effect.mutation_type = "disruptive_inframe_insertion"
+                    else:
+                        variant_effect.mutation_type = "conservative_inframe_insertion"
+                else:
+                    # check if this is a disruptive inframe deletion
+                    if (row.Start - gene_start) % 3 != 0:
+                        variant_effect.mutation_type = "disruptive_inframe_deletion"
+                    else:
+                        variant_effect.mutation_type = "conservative_inframe_deletion"
+            if variant_effect not in variant_effect2clades:
+                variant_effect2clades[variant_effect] = [node]
+            else:
+                variant_effect2clades[variant_effect].append(node)
+            continue
         # Iterate through the genes the position is in, check if they are already present, mutate if so, if not
         # add to dictionaries and mutate
         # Position of the mutation in the gene, zero based
@@ -356,6 +422,8 @@ def extract_synonymous(clade, branch_mutations, updated_reference, reference_seq
     for row in gene_overlaps.itertuples():
         mutation = [row.ref, 0, row.Start, row.alt]
         gene_name = row.Id
+        if len(row.alt) > 1:
+            continue
         # initialise fields for effect prediction
         # upstream_aa, downstream_aa, reference_aa, upstream_codon, downstream_codon, reference_codon, impact, \
         pos = str(mutation[2])

@@ -27,14 +27,6 @@ def convertGFF(gff_file_name):
     lines = gff_file.read().replace(",", "")
     split = lines.split("##FASTA")
 
-    if len(split) != 2:
-        print("Problem reading GFF file", gff_file.name)
-        raise RuntimeError("Error reading GFF file")
-    
-    #Convert GFF sequence to fasta format
-    with StringIO(split[1]) as temp_fasta:
-        sequences = list(SeqIO.parse(temp_fasta, "fasta"))
-    
     parsed_gff = gff.create_db(clean_gff_string(split[0]),
                                 dbfn = ":memory:",
                                 force = True,
@@ -48,9 +40,14 @@ def convertGFF(gff_file_name):
     pyr_chr, pyr_start, pyr_stop, pyr_strand, pyr_id = [[] for i in range(5)]
     for entry in parsed_gff.all_features(featuretype = ()):
         if entry.featuretype != "gene" and entry.featuretype != "pseudogene" and entry.featuretype != "region":
-            if not 'locus_tag' in entry.attributes and not 'locus' in entry.attributes:
+            if 'locus_tag' in entry.attributes :
+                gene_annotation[entry.id] = [entry.start, entry.stop, entry.strand, entry.attributes['locus_tag'][0],
+                                             entry.featuretype]
+            elif 'locus' in entry.attributes :
+                gene_annotation[entry.id] = [entry.start, entry.stop, entry.strand, entry.attributes['locus'][0],
+                                             entry.featuretype]
+            else:
                 continue
-            gene_annotation[entry.id] = [entry.start, entry.stop, entry.strand, entry.attributes['locus'][0], entry.featuretype]
             #add stop codon to coordinates? (entry.stop + 1)
             pyr_chr.append(entry.seqid)
             pyr_start.append(entry.start)

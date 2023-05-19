@@ -15,7 +15,6 @@ class VariantEffect:
         self.downstream_allele = downstream_allele
         self.pseudogene = ""
 
-
     def to_string(self):
         return '\t'.join([str(i) for i in [self.node, self.position, self.upstream_allele, self.downstream_allele,
                                                     self.mutation_type, self.upstream_aa, self.downstream_aa,
