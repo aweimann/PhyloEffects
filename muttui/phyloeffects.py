@@ -4,7 +4,6 @@ import argparse
 import os
 import sys
 
-import vcf
 from Bio import AlignIO, Phylo
 
 import gff_conversion
