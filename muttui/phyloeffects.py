@@ -199,6 +199,7 @@ def main():
     # Convert the positions in the alignment to genome positions, if --all_sites specified the positions will be the
     # same
     if args.all_sites:
+        alignment = AlignIO.read(args.reference.name, format='fasta')
         position_translation = rs.all_sites_translation(alignment)
     elif args.alignment:
         position_translation = rs.convertTranslation(args.conversion)
@@ -238,7 +239,7 @@ def main():
     # alignment are assumed
     # and the root sequence from the ancestral reconstruction is used
     if not args.tree:
-        if not vcf:
+        if not args.vcf:
             args.alignment.seek(0, 0)
         reference_sequence = AlignIO.read(args.reference.name, "fasta")
         reference_sequence = reference_sequence[0].seq.upper()
