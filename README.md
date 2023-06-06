@@ -1,5 +1,5 @@
-# MutTui
-MutTui pipeline to reconstruct mutational spectra for bacterial and viral datasets
+# PhyloEffects
+PhyloEffects pipeline to reconstruct mutational spectra for bacterial and viral datasets
 
 ## Documentation
 
