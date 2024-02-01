@@ -7,3 +7,6 @@ PhyloEffects is a piece of software to reconstruct variant effect annotations in
 ## Example Usage
 To run the example data navigate to the repository and run    
 ```python phyloeffects.py -a example_data/100_aln.fasta   -r example_data/Pseudomonas_aeruginosa_PAO1_v2.fa -t example_data/100_rescaled.nwk   -o example_data/phyloeffects -c  example_data/100_pos_mapping.txt   -g example_data/Pseudomonas_aeruginosa_PAO1_107_converted.gff```
+
+## Other 
+PhyloEffects was used to infer variant effect annotations for the Pseudomonas Census Paper  (Weimann et al. 2024). Refer to the Zenodo repository for the full input data.
