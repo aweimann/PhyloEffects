@@ -41,10 +41,10 @@ translation_table = np.array([[[b'K', b'N', b'K', b'N', b'X'],
                                [b'X', b'X', b'X', b'X', b'X']]])
 
 
-# Converts the positional translation to a dictionary with alignment positions as keys and genome positions as values
-def convertTranslation(positionsFile):
-    # Import the translation file
-    positions = open(positionsFile.name).readlines()
+def convert_translation(positionsFile):
+    """ Converts the positional translation to a dictionary with alignment positions as keys and genome positions as"""
+    positions = open(positionsFile.name)
+    positions.readline()
 
     conversion = {}
 
@@ -69,6 +69,7 @@ def all_sites_translation(alignment):
 
 # Extracts the mutations in branch_mutations.txt to a dictionary with branch names as keys and mutations as values
 def get_branch_mutation_dict(branchFile, translation):
+    """Parse treetime branch mutation file into a dictionary of mutations using the translation dictionary."""
     branchDict = {}
 
     # Iterate through the mutations and add to branchDict
@@ -90,38 +91,40 @@ def get_branch_mutation_dict(branchFile, translation):
 
     return branchDict
 
+
 def get_mutations_from_table(variant_table):
     """Parse a variant table into a dictionary of mutations."""
     # parse header
-    clades = ["example"]
-    clade2mutation = {"example": []}
+    clades = ["sample"]
+    clade2mutation = {"sample": []}
     header = variant_table.readline().strip().split("\t")
     for line in variant_table:
         line = line.strip().split("\t")
         ref, alt, pos = line[header.index("ref")], line[header.index("alt")], int(line[header.index("pos")])
         # get length of reference allele
         length = len(ref)
-        clade2mutation["example"].append((ref, pos + length - 1, pos, alt))
+        clade2mutation["sample"].append((ref, pos + length - 1, pos, alt))
     return clade2mutation, clades
 
 
-
 def get_mutations_from_vcf(vcf_path):
+    """Parse a vcf file into a dictionary of mutations."""
     vcf = VCF(vcf_path)
-    clades = ["example"]
+    clades = ["sample"]
     clade2mutation = {}
-    clade2mutation["example"] = []
+    clade2mutation["sample"] = []
     variants = []
     for record in vcf:
         ref = record.REF
         alt = record.ALT[0]
         start = record.start
         end = record.end
-        clade2mutation["example"].append((ref, start, start, alt))
+        clade2mutation["sample"].append((ref, start, start, alt))
     return clade2mutation, clades
 
 
 def get_mutations_from_alignment(alignment, ref, translation):
+    """Parse an alignment into a dictionary of mutations."""
     clade2mutations = {}
     clades = []
     for record in SeqIO.parse(alignment, "fasta"):
@@ -135,15 +138,16 @@ def get_mutations_from_alignment(alignment, ref, translation):
     return clade2mutations, clades
 
 
-# Get the reference sequence, if -r specified this will be the provided genome, otherwise all sites in the alignment
-# are assumed
-# and the root sequence from the ancestral reconstruction is used
 def get_reference(reference, all_sites, alignment, positionTranslation):
+    """Get the reference sequence."""
     if all_sites:
         # Get the reference as the root of the reconstruction
+        reference_sequence = None
         for sequence in alignment:
             if sequence.name == "NODE_0000000":
                 reference_sequence = sequence.seq
+        if reference_sequence is None:
+            raise ValueError("Reference sequence not found in alignment. Should be named NODE_0000000.")
 
     # Use the provided reference as the reference sequence and substitute in the nucleotides in the inferred root
     # sequence at each variable position. This means the updateReference function uses the root sequence as a
@@ -329,6 +333,7 @@ def extract_synonymous(clade, branch_mutations, updated_reference, reference_seq
             right=lambda x: x.groupby('Start')['Distance'].transform('min')).query('Distance == right')
         genes_proximity = pd.concat([genes_us, genes_ds])
     aa_pos2effect = {}
+    print("processing node/sample " + node)
     print("intergenic variants")
     for row_tuple in genes_proximity.itertuples():
         gene_name = row_tuple.Id

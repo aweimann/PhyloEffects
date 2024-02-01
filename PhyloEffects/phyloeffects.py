@@ -1,4 +1,4 @@
-# Runs the MutTui pipeline on an input tree and alignment
+# Runs the PhyloEffects pipeline on an input tree and alignment
 
 import argparse
 import os
@@ -15,7 +15,7 @@ from treetime import run_treetime
 
 # Parse command line options
 def get_options():
-    description = "Run the MutTui pipeline on a given alignment and tree"
+    description = "Run the PhyloEffects pipeline on a given alignment and tree"
 
     parser = argparse.ArgumentParser(description=description)
 
@@ -92,11 +92,6 @@ def get_options():
                           default=None)
 
     # Other options
-    parser.add_argument("--rna",
-                        dest="rna",
-                        help="Specify if using an RNA pathogen, MutTui will output an RNA mutational spectrum",
-                        action="store_true",
-                        default=False)
     parser.add_argument("--all_sites",
                         dest="all_sites",
                         help="Specify that the alignment contains all sites, in which case a reference genome does "
@@ -202,7 +197,7 @@ def main():
         alignment = AlignIO.read(args.reference.name, format='fasta')
         position_translation = rs.all_sites_translation(alignment)
     elif args.alignment:
-        position_translation = rs.convertTranslation(args.conversion)
+        position_translation = rs.convert_translation(args.conversion)
     else:
         position_translation = rs.all_sites_translation(ref)
 
@@ -239,12 +234,16 @@ def main():
     # alignment are assumed
     # and the root sequence from the ancestral reconstruction is used
     if not args.tree:
+        # If a tree is not provided, the reference sequence is assumed to be the first sequence in the alignment
         if not args.vcf:
             args.alignment.seek(0, 0)
         reference_sequence = AlignIO.read(args.reference.name, "fasta")
         reference_sequence = reference_sequence[0].seq.upper()
     else:
-        reference_sequence = rs.get_reference(args.reference, args.all_sites, alignment, position_translation)
+        if args.reference:
+            reference_sequence = rs.get_reference(args.reference, args.all_sites, alignment, position_translation)
+        else:
+            sys.exit("A reference sequence must be provided with -r when using --tree")
     reference_length = len(reference_sequence)
     clade2name = {}
     if args.tree:
