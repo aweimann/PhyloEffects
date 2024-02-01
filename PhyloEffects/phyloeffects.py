@@ -206,11 +206,11 @@ def main():
     # Extracts mutations to a dictionary from the branch_mutations.txt file
     if args.tree:
         if args.start_from_treetime:
-            branch_mutation_dict = rs.get_branch_mutation_dict(args.treetime_out + "branch_mutations.txt",
-                                                           position_translation)
+            branch_mutation_dict = rs.get_branch_mutation_nexus_dict(args.treetime_out + "annotated_tree.nexus",
+                                                                     position_translation)
         else:
-            branch_mutation_dict = rs.get_branch_mutation_dict(args.output_dir + "branch_mutations.txt",
-                                                           position_translation)
+            branch_mutation_dict = rs.get_branch_mutation_nexus_dict(args.output_dir + "annotated_tree.nexus",
+                                                                     position_translation)
     elif args.alignment:
         branch_mutation_dict, clades = rs.get_mutations_from_alignment(args.alignment, ref_seq, position_translation)
     elif args.variant_table:

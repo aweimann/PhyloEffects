@@ -12,6 +12,9 @@ import Bio.SeqIO as SeqIO
 from Bio.Seq import Seq
 from variant_effect import VariantEffect
 import time
+from collections import defaultdict
+import re
+
 
 
 translation_table = np.array([[[b'K', b'N', b'K', b'N', b'X'],
@@ -67,7 +70,22 @@ def all_sites_translation(alignment):
     return conversion
 
 
-# Extracts the mutations in branch_mutations.txt to a dictionary with branch names as keys and mutations as values
+def get_branch_mutation_nexus_dict(NexusFile, translation):
+    """Parse treetime mutation annotated Nexus file into a dictionary of mutations using the translation dictionary."""
+    branchDict = defaultdict(list)
+
+    with open(NexusFile, 'r') as infile:
+        matches = re.findall("[^,\(\)]+:[.0-9]+\[\&mutations\=\"[,A-Z0-9]*", infile.read())
+        for m in matches:
+            bname = m.split(':')[0]
+            muts = m.split('="')[1].split(",")
+            if muts[0] == '': continue
+            for mut in muts:
+                branchDict[bname].append([mut[0], int(mut[1:-1]), translation[int(mut[1:-1])], mut[-1]])
+
+    return(branchDict)
+
+
 def get_branch_mutation_dict(branchFile, translation):
     """Parse treetime branch mutation file into a dictionary of mutations using the translation dictionary."""
     branchDict = {}
