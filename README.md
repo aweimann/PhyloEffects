@@ -1,6 +1,8 @@
 # PhyloEffects
-PhyloEffects pipeline to reconstruct mutational spectra for bacterial and viral datasets
+PhyloEffects pipeline to reconstruct effects in their phylogenetic context.
 
-## Documentation
-
-Documentation for MutTui can be found [here](https://chrisruis.github.io/MutTui)
+## Installation
+```conda install Bioconda gffutils```
+```conda install phylo-treetime```
+```pip install cyvcf2```
+```pip install pyranges```
