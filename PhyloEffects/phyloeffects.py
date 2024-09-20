@@ -235,7 +235,7 @@ def main():
     # and the root sequence from the ancestral reconstruction is used
     if not args.tree:
         # If a tree is not provided, the reference sequence is assumed to be the first sequence in the alignment
-        if not args.vcf:
+        if not args.vcf and not args.variant_table:
             args.alignment.seek(0, 0)
         reference_sequence = AlignIO.read(args.reference.name, "fasta")
         reference_sequence = reference_sequence[0].seq.upper()
