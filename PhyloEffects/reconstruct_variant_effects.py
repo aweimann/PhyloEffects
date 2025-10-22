@@ -123,7 +123,6 @@ def get_mutations_from_table(variant_table):
         length = len(ref)
         clade2mutation["%s_%s_%s" % (ref, alt, pos)] = [(ref, pos + length - 1, pos, alt)]
         clades.append("%s_%s_%s" % (ref, alt, pos))
-    print(clade2mutation)
     return clade2mutation, clades
 
 
