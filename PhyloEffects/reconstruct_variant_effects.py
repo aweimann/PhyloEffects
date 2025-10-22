@@ -121,7 +121,9 @@ def get_mutations_from_table(variant_table):
         ref, alt, pos = line[header.index("ref")], line[header.index("alt")], int(line[header.index("pos")])
         # get length of reference allele
         length = len(ref)
-        clade2mutation["sample"].append((ref, pos + length - 1, pos, alt))
+        clade2mutation["%s_%s_%s" % (ref, alt, pos)] = [(ref, pos + length - 1, pos, alt)]
+        clades.append("%s_%s_%s" % (ref, alt, pos))
+    print(clade2mutation)
     return clade2mutation, clades
 
 
@@ -380,6 +382,7 @@ def extract_synonymous(clade, branch_mutations, updated_reference, reference_seq
         else:
             variant_effect2clades[variant_effect].append(node)
     print("first pass")
+
     for row in gene_overlaps.itertuples():
         # for mutation in branchMutations:
         mutation = [row.ref, 0, row.Start, row.alt]

@@ -227,9 +227,9 @@ def main():
     # Iterate through the branches
     effects = open(args.output_dir + "variant_effect_predictions.txt", "w")
     effects.write("\t".join(
-        ["node", "pos", "upstream_allele", "downstream_allele", "mutation_type", "upstream_aa", "downstream_aa",
+        ["pos", "upstream_allele", "downstream_allele", "mutation_type", "upstream_aa", "downstream_aa",
          "reference_aa", "upstream_codon", "downstream_codon", "reference_codon", "impact", "aa_change",
-         "multi_codon_substitution", "locus_tag", "pseudogene"]) + "\n")
+         "multi_codon_substitution", "locus_tag", "pseudogene", "samples"]) + "\n")
     # Get the reference sequence, if -r specified this will be the provided genome, otherwise all sites in the
     # alignment are assumed
     # and the root sequence from the ancestral reconstruction is used
