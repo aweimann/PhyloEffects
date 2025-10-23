@@ -73,16 +73,20 @@ def all_sites_translation(alignment):
 def get_branch_mutation_nexus_dict(NexusFile, translation):
     """Parse treetime mutation annotated Nexus file into a dictionary of mutations using the translation dictionary."""
     branchDict = defaultdict(list)
-
     with open(NexusFile, 'r') as infile:
-        matches = re.findall("[^,\(\)]+:[.0-9]+\[\&mutations\=\"[,A-Z0-9]*", infile.read())
+        t_string = infile.read()
+        matches = re.findall("[^,\(\)]+:[.0-9.e\-]+\[\&mutations\=\"?[\-,A-Z0-9]*", t_string)
+        print(len(matches))
         for m in matches:
             bname = m.split(':')[0]
             muts = m.split('="')[1].split(",")
             if muts[0] == '': continue
             for mut in muts:
+                if mut[0] == "-" or mut[-1] == "-":
+                    continue
                 branchDict[bname].append([mut[0], int(mut[1:-1]), translation[int(mut[1:-1])], mut[-1]])
 
+    print(branchDict)
     return(branchDict)
 
 

@@ -194,7 +194,7 @@ def main():
     # Convert the positions in the alignment to genome positions, if --all_sites specified the positions will be the
     # same
     if args.all_sites:
-        alignment = AlignIO.read(args.reference.name, format='fasta')
+        alignment = AlignIO.read(args.treetime_out + "ancestral_sequences.fasta", "fasta")
         position_translation = rs.all_sites_translation(alignment)
     elif args.alignment:
         position_translation = rs.convert_translation(args.conversion)
@@ -220,7 +220,6 @@ def main():
             raise Exception()
         else:
             branch_mutation_dict, clades = rs.get_mutations_from_vcf(args.vcf)
-
     print("Alignment/variants processed")
 
 
