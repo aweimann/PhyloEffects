@@ -40,16 +40,20 @@ def prune_tree(input_tree, output_tree, alignment, alignment_out, outgroup, midp
         for node in tree.traverse():
             node.dist = node.dist/scaling_factor
     if outgroup is not None:
+        outgroup_node = None
         for node in tree.traverse():
             if node.name == outgroup:
+                outgroup_node = node
                 tree.set_outgroup(node)
-        for node in tree.get_children():
-            if node.name.startswith("internal"):
-                tree.set_outgroup(node)
-                node.name = "root_branch"
+        if outgroup_node is None:
+            raise ValueError("Outgroup {} not found in tree".format(outgroup))
+        # get all children of the outgroup
+        outgroup_leaves = []
+        for node in outgroup_node.iter_leaves():
+            outgroup_leaves.append(node.name)
         terminal_nodes = []
         for node in tree.iter_leaves():
-            if node.name != outgroup:
+            if node.name not in outgroup_leaves:
                 terminal_nodes.append(node)
         #prune outgroup
         tree.prune(terminal_nodes)
