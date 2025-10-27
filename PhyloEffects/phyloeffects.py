@@ -10,7 +10,7 @@ import gff_conversion
 import isvalid
 import reconstruct_variant_effects as rs
 from __init__ import __version__
-from treetime import run_treetime
+from run_treetime import run_treetime
 
 
 # Parse command line options
@@ -66,6 +66,7 @@ def get_options():
                          default=None)
     io_opts.add_argument("-g",
                          "--gff",
+                         required=True,
                          dest="gff",
                          help="GFF reference containing gene coordinates in reference sequence. Used to split "
                               "mutations into transcription strands " +
@@ -124,6 +125,9 @@ def get_options():
                         version="%(prog)s " + __version__)
 
     args = parser.parse_args()
+    # if treetime directory is not set; set to output directory
+    if args.treetime_out is None:
+        args.treetime_out = args.output_dir
     return args
 
 
@@ -137,12 +141,8 @@ def main():
     if not args.start_from_treetime:
         print("Running treetime ancestral reconstruction to identify mutations")
 
-        # Check if the alignment is to be converted so gaps become Ns. If so, run the conversion
-        # and run treetime on the new alignment
         if args.filter:
-            rs.change_gaps_to_Ns(args.alignment, args.output_dir)
-            run_treetime(open(args.output_dir + "gaps_to_N_alignment.fasta"), args.tree, args.output_dir,
-                         args.add_treetime_cmds)
+            raise NotImplementedError("The --filter option has been deprecated. Gaps are ignored by default")
         else:
             # Run treetime on the input alignment and tree with any provided options
             if args.tree:
@@ -151,7 +151,6 @@ def main():
 
                 # Import the alignment from treetime
                 alignment = AlignIO.read(args.output_dir + "ancestral_sequences.fasta", "fasta")
-
 
     else:
         if args.tree:
@@ -173,16 +172,12 @@ def main():
 
     print("Alignment and tree imported. Reconstructing variant effects")
 
-    # Check if a GFF file is needed, if so read it in and process it
-    if not args.gff:
-        raise RuntimeError("GFF file needs to be provided with -g when using --strand_bias or --synonymous")
-    else:
-        gene_coordinates, position_gene = gff_conversion.convertGFF(args.gff.name)
-        with open(args.output_dir + "gene_annotation.txt", 'w') as f:
-            # header
-            f.write("start\tend\tstrand\tlocus_tag\tfeature\n")
-            for value_list in gene_coordinates.values():
-                f.write("\t".join([str(i) for i in value_list]) + "\n")
+    gene_coordinates, position_gene = gff_conversion.convertGFF(args.gff.name)
+    with open(args.output_dir + "gene_annotation.txt", 'w') as f:
+        # header
+        f.write("start\tend\tstrand\tlocus_tag\tfeature\n")
+        for value_list in gene_coordinates.values():
+            f.write("\t".join([str(i) for i in value_list]) + "\n")
 
     #labelled_tree, tree_labels = labelAllBranches(tree)
 
@@ -268,8 +263,8 @@ def main():
             else:
                 updated_reference = reference_sequence
             # infer variant effects
-            rs.extract_synonymous(clade, branch_mutations, updated_reference, ref_seq, variant_effect2clades,
-                                                                 gene_coordinates, position_gene, args.output_dir)
+            rs.reconstruct_effects(clade, branch_mutations, updated_reference, ref_seq, variant_effect2clades,
+                                   gene_coordinates, position_gene, args.output_dir)
 
 
     for variant_effect, clades in variant_effect2clades.items():

@@ -44,50 +44,43 @@ translation_table = np.array([[[b'K', b'N', b'K', b'N', b'X'],
                                [b'X', b'X', b'X', b'X', b'X']]])
 
 
-def convert_translation(positionsFile):
+def convert_translation(positions_file):
     """ Converts the positional translation to a dictionary with alignment positions as keys and genome positions as"""
-    positions = open(positionsFile.name)
+    positions = open(positions_file.name)
     positions.readline()
-
     conversion = {}
-
     for eachPosition in positions:
         conversion[int(eachPosition.strip().split("\t")[0])] = int(eachPosition.strip().split("\t")[1])
 
     return conversion
 
 
-
-
 # Creates a positional translation dictionary with alignment sites as keys and values
 # Used when --all_sites is specified so there is no need to convert the sites
 def all_sites_translation(alignment):
     conversion = {}
-
     for eachPosition in range(len(alignment[0].seq)):
         conversion[int(eachPosition) + 1] = int(eachPosition) + 1
-
     return conversion
 
 
 def get_branch_mutation_nexus_dict(NexusFile, translation):
     """Parse treetime mutation annotated Nexus file into a dictionary of mutations using the translation dictionary."""
-    branchDict = defaultdict(list)
+    branch_dict = defaultdict(list)
     with open(NexusFile, 'r') as infile:
         t_string = infile.read()
-        matches = re.findall("[^,\(\)]+:[.0-9.e\-]+\[\&mutations\=\"?[\-,A-Z0-9]*", t_string)
-        print(len(matches))
+        matches = re.findall('[^,\(\)]+:[.0-9.e\-]+\[\&mutations\="?[\-,A-Z0-9]*', t_string)
         for m in matches:
             bname = m.split(':')[0]
             muts = m.split('="')[1].split(",")
-            if muts[0] == '': continue
+            if muts[0] == '':
+                continue
+            # ignore gaps
             for mut in muts:
                 if mut[0] == "-" or mut[-1] == "-":
                     continue
-                branchDict[bname].append([mut[0], int(mut[1:-1]), translation[int(mut[1:-1])], mut[-1]])
-
-    print(branchDict)
-    return(branchDict)
+                branch_dict[bname].append([mut[0], int(mut[1:-1]), translation[int(mut[1:-1])], mut[-1]])
+    return branch_dict
 
 
 def get_branch_mutation_dict(branchFile, translation):
@@ -306,11 +299,10 @@ def extract_position(gene_coordinates, position_in_gene):
         return (reverse_position + 1) // 3 + ((reverse_position + 1) % 3 != 0)
 
 
-# Extracts synonymous mutations along a given branch
-# Used when --synonymous is specified
-def extract_synonymous(clade, branch_mutations, updated_reference, reference_sequence,
-                       variant_effect2clades, gene_coordinates, position_gene,
-                       output_dir):
+# Reconstruct variant effects
+def reconstruct_effects(clade, branch_mutations, updated_reference, reference_sequence,
+                        variant_effect2clades, gene_coordinates, position_gene,
+                        output_dir):
     # Gene sequences at the upstream node
     upstream_genes = dict()
     # Gene sequences containing mutations along the branch
