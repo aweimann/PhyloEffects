@@ -1,0 +1,179 @@
+
+library(tidyverse)
+library("scales")
+library(ggrepel)
+library(forcats)
+library(fuzzyjoin)
+library(stringr)
+#library(ggtree)
+#library(ape)
+
+theme_set(theme_classic(base_size = 18))
+
+
+reverselog_trans <- function(base = exp(1)) {
+    trans <- function(x) -log(x, base)
+    inv <- function(x) base^(-x)
+    trans_new(paste0("reverselog-", format(base)), trans, inv, 
+              log_breaks(base = base), 
+              domain = c(1e-100, Inf))
+}
+
+
+scientific_10 <- function(x) {
+      ifelse(x == 0, "0",
+      parse(text=gsub("e[+]", " %*% 10^", scales::scientific_format()(x))))
+}
+
+#manhattan plot function
+manhattan <- function(g, by){
+    
+    
+g  %>% ggplot(aes(position, pval, label = locus_tag)) +#, color = !!sym(by))) +
+    geom_hline(aes(yintercept = (g %>% filter(padj < 0.05) %>% ungroup() %>% summarize(max(pval)))[[1]])) +
+    geom_point(pch = 21) +
+    geom_text_repel(size = 6) +
+    scale_x_continuous(label = scientific_10) +
+    scale_y_continuous(trans = reverselog_trans(10),
+        breaks = trans_breaks("log10", function(x) 10^x),
+        labels = trans_format("log10", math_format(.x)))+
+    # scale_colour_manual(values = c("grey", "black"), guide = 'none') +
+    scale_size_manual(guide = 'none',  values = c(sig = 3, `non-sig` = 1), 1 ) +
+    ylab(expression(log[10]~group("(", p-value, ")")))+
+    xlab("Genomic position")
+#https://slowkow.com/notes/ggplot2-qqplot/
+}
+
+#qqplot function
+gg_qqplot <- function(ps, ci = 0.95) {
+  n  <- length(ps)
+  print(sort(ps))
+  df <- data.frame(
+    observed = -log10(sort(ps)),
+    expected = -log10(ppoints(n)),
+    clower   = -log10(qbeta(p = (1 - ci) / 2, shape1 = 1:n, shape2 = n:1)),
+    cupper   = -log10(qbeta(p = (1 + ci) / 2, shape1 = 1:n, shape2 = n:1))
+  )
+  log10Pe <- expression(paste("Expected -log"[10], "p-value"))
+  log10Po <- expression(paste("Observed -log"[10], "p-value"))
+  ggplot(df) +
+    geom_point(aes(expected, observed), shape = 1, size = 1) +
+    geom_abline(intercept = 0, slope = 1, alpha = 0.5) +
+    geom_line(aes(expected, cupper), linetype = 2) +
+    geom_line(aes(expected, clower), linetype = 2) +
+    geom_hline(yintercept = 2.657577, size = 0.1) +
+    theme_light(base_size = 26)+
+    xlab(log10Pe) +
+    ylab(log10Po)
+}
+
+
+# v <-  st_df %>% select(st, mutations) %>% mutate(mutations = map(mutations, ~ read_tsv(., col_types = cols(.default = col_character(), pos = col_integer())))) %>% unnest(cols = c(mutations))  %>% rename(ref = upstream_allele, alt = downstream_allele)
+
+#when looking at intergenic regions only consider upstream gene variants
+annot <- read_tsv("muttui_out/st25_subs/gene_annotation.txt")
+
+sts = c("st25_subs")
+st_df <- tibble(st = sts)
+
+
+st_df <-
+    mutate(st_df, mutations = str_c("muttui_out/st25_subs/variant_effect_predictions.txt"))  %>%
+    mutate(st_df, recombination = str_c("snp-sites/", st, ".recombination_prediction.txt")) %>%
+    mutate(st_df, recombination_pos = str_c("snp-sites/", st, ".recombination_pos.txt"))
+
+v <-  st_df %>% select(st, mutations) %>% mutate(mutations = map(mutations, ~ read_tsv(., col_types = cols(.default = col_character(), pos = col_integer())))) %>% unnest(cols = c(mutations))  %>% rename(ref = upstream_aa, alt = downstream_aa)
+v <- v %>% separate_rows(samples, sep = ",") 
+v <- v %>% filter(!(samples %in% c("NC_009648.1", "Node_37", "Node_474", "ERR775516", "Node_476", "Node_461", "Node_475")))
+
+
+#read in indels
+#indels <- st_df %>% select(st, indels) %>%mutate(indels = map(indels, ~ read_tsv(., col_types = cols(.default = col_character()) )))  %>% unnest(cols = c(indels))
+#indels <- indels %>% separate(variant_id, c("pos", "ref", "alt"), sep = "_") %>%
+#    mutate(ref = toupper(ref), alt = toupper(alt), pos = as.double(pos))
+# indels <- indels %>% group_by(pos, ref, alt) %>% add_tally() %>% filter(n == 1)
+# indels <- indels %>% inner_join(effect_indels) %>% select(- parent_node, -node_state, -parent_node_state, -n) %>% rename(mutation_type = eff_type)
+# indels <- indels %>% inner_join(annot)
+
+# v <- bind_rows(v, indels)
+v <- v %>% filter(impact != "MODIFIER")
+
+#remove recombination sites
+#read in recombination position and interval 
+recombination <- st_df %>% select(st, recombination) %>%mutate(recombination = map(recombination, ~ read_tsv(., col_types = cols(.default = col_character(), start = col_integer(), stop = col_integer()))))  %>% unnest(cols = c(recombination)) %>% rename(end = stop)
+gubbins_embl <- st_df %>% select(st, recombination_pos) %>%mutate(recombination_pos = map(recombination_pos, ~ read_tsv(., col_types = cols(.default = col_character(), pos = col_integer()))))  %>% unnest(cols = c(recombination_pos)) 
+recomb_pos <- gubbins_embl %>% mutate(start = pos, end = pos + 1)  %>% genome_join(recombination,  by = c("st", "start", "end")) %>% filter(node.x == node.y) %>% select(-node.y, - start.y, -st.y) %>% rename(st = st.x) %>% select(pos, "st")
+#remove recombination from multi codon substitutions and standard substitutions separately as MCS positions might not agree with Gubbins positions
+v_mcs <- v  %>% filter(!is.na(multi_codon_substitution)) %>% mutate(start = pos, end =  pos + 2) %>%  genome_anti_join(recomb_pos %>% mutate(start = pos, end = pos + 1), by = c("st", "start", "end"))  %>% select(-start, -end)
+v <- v %>% filter(is.na(multi_codon_substitution)) %>% anti_join(recomb_pos)
+# v <- bind_rows(v, v_mcs)
+
+#intergenic mutations
+# intergenic_mutations <- v %>% group_by(st, node, pos, ref, alt) %>% filter(mutation_type == "upstream_gene_variant" | mutation_type == "downstream_gene_variant") %>% mutate(PAO1 = ifelse(length(PAO1) == 2, str_c(PAO1[1], PAO1[2], sep = ","), PAO1), gene_name = ifelse(length(gene_name) == 2,str_c(gene_name[1], gene_name[2], sep = ","), gene_name), n = length(PAO1)) %>% group_by(st, node, pos, ref, alt, PAO1, gene_name) %>% count() %>% group_by(PAO1, gene_name) %>% count() %>% arrange(-n)
+# intergenic_regions <- read_tsv("intergenic_regions.txt")
+# intergenic_mutations <- intergenic_mutations %>% inner_join(intergenic_regions) %>% mutate(gene_length = end - start)
+# total_length_intergenic <- intergenic_regions %>% mutate(gene_length = end - start) %>% ungroup() %>% summarize(sum(gene_length))
+# total_mutations <- intergenic_mutations %>% ungroup() %>% summarize(sum(n))
+# intergenic_mutations <- intergenic_mutations   %>%  mutate(pval = poisson.test(n, r=total_mutations[[1]]*(gene_length/(total_length_intergenic[[1]])), alternative = "greater")['p.value'][[1]])
+# intergenic_mutations$padj <- p.adjust(intergenic_mutations$pval, method = "BH")
+v <- v %>%  filter(mutation_type != "upstream_gene_variant" & mutation_type != "downstream_gene_variant")
+#v <- v %>%  filter(mutation_type != "upstream_gene_variant")
+
+
+#stratify by synonymous vs. non-synonymous variants 
+mod <-  v  %>% group_by(locus_tag) %>% filter(impact == "LOW") %>% count() %>% arrange(-n) 
+high <-  v  %>% group_by(locus_tag) %>%   filter(impact != "LOW") %>% count() %>% arrange(-n) 
+
+#count global number of mutations
+comb <- mod %>% full_join(high, by = c("locus_tag")) %>% mutate(n.x = ifelse(is.na(n.x), 0, n.x), n.y = ifelse(is.na(n.y), 0, n.y))
+comb <- comb %>% mutate(dn_ds = n.y/n.x)  %>% mutate(dn_ds = ifelse(is.infinite(dn_ds), n.y, dn_ds ))  %>% arrange(-dn_ds) 
+#stratify between point mutations and structural variation
+mutation_type <- v %>% mutate(mutation_type = "point_mutation") %>%   group_by(locus_tag, mutation_type)  %>%  count()  %>% spread(mutation_type, n, fill = 0)
+#stratify by impact 
+impact <- v %>%   group_by(locus_tag, impact)  %>% count() %>% spread(impact, n, fill = 0)
+#non-synonymous variants per ST
+# per_patient <- v  %>%  filter(impact != "LOW") %>%  group_by(locus_tag, gene_name, st) %>% count() %>% spread(st, n, fill = 0)
+#count number of STs mutations in a particular gene are found 
+#per_st <- v  %>%  filter(impact != "LOW") %>%  group_by(locus_tag, st) %>% count()  %>%  group_by(PAO1, gene_name) %>% count() %>% rename(no_sts = n)
+comb <- comb %>% inner_join(impact) %>% inner_join(mutation_type)
+uq_variants <-  v %>% group_by(locus_tag, pos, upstream_allele, downstream_allele) %>% filter(impact != "LOW") %>% 
+    summarize(unique_variants = 1) %>% group_by(locus_tag) %>% 
+    summarize(unique_variants = sum(unique_variants))
+# ref_genome_coverage <- read_tsv("reference_genes_coverage.txt")
+# total length of genes in the genome 
+total_length <- (mutate(annot, gene_length = end - start)  %>% ungroup() %>%  summarize(total_length = sum(gene_length)))$total_length
+#subtract numebr of overlapping base pairs (0) 
+total_length <- (mutate(annot, gene_length = end - start)  %>% 
+                 ungroup() %>% 
+                 summarize(total_length = sum(gene_length) - 0 ))$total_length
+comb <- comb %>% inner_join(uq_variants) %>%
+    inner_join(annot) %>% 
+    mutate(gene_length = end - start, position = start) %>% 
+    select(locus_tag, n.x, n.y, dn_ds, gene_length,  position, HIGH:point_mutation, unique_variants) %>% 
+    mutate(d.x_mod = n.y * 1000/gene_length) %>% arrange(-d.x_mod) 
+no_mutations <- comb %>% ungroup() %>% summarize(sum(n.y)) %>% as_vector()
+out = "burden_test/"
+
+comb <- comb   %>%  
+    rowwise() %>% 
+    mutate(r = no_mutations*(gene_length /(total_length)), pval = poisson.test(n.y,r=r, alternative = "greater")['p.value'][[1]])
+comb$padj <- p.adjust(comb$pval, method = "BH")
+
+comb <- comb %>% mutate(is_sig = ifelse(padj < 0.05, "sig", "non-sig"))
+# comb <- comb %>% inner_join(per_st)
+# ggplot(comb, aes(no_sts, padj, color = gene_length)) + geom_point(size = 1) + scale_y_log10() + scale_color_continuous(trans = 'log2') + geom_hline(yintercept = 0.05)
+# ggsave("padj_vs_no_sts.png")
+
+
+comb %>% filter(padj < 0.05) %>% select(locus_tag)  %>% inner_join(v) %>% filter(impact != "LOW")%>% write_tsv("variants_in_burden_hits.txt")
+
+comb <- comb  %>% arrange(padj) %>%  write_tsv(str_c(out,"poisson_test.txt"))
+manhattan(comb)
+ggsave(str_c(out,"manhattan_poisson_test.pdf"), width = 18)
+gg_qqplot(comb$pval)
+ggsave(str_c(out,"qqplot_poisson_test.pdf"))
+
+burden_variants <- comb %>% filter(padj < 0.05) %>% select(locus_tag)  %>% inner_join(v) %>% filter(impact != "LOW")
+burden_variants %>% write_tsv("variants_in_burden_hits.txt")
+
+

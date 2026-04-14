@@ -9,7 +9,7 @@ def parse():
     parser.add_argument("output_tree", help="output tree")
     parser.add_argument("--alignment_out", help="alignment pruned")
     parser.add_argument("--outgroup", help="outgroup to root tree")
-    parser.add_argument("--rescale", help="scale by alignment length (if Gubbins tree)")
+    parser.add_argument("--rescale", help="scale by alignment length (if Gubbins tree)", action = "store_true")
     parser.add_argument("--midpoint", help="if set, midpoint root tree", action = "store_true")
     parser.add_argument("--relabel", help="name internal nodes", action = "store_true")
     args = parser.parse_args()

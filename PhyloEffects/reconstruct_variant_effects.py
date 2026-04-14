@@ -6,7 +6,6 @@ from Bio.Seq import Seq
 import numpy as np
 import array
 import pyranges
-from Bio import AlignIO
 import pandas as pd
 import Bio.SeqIO as SeqIO
 from Bio.Seq import Seq
@@ -47,7 +46,7 @@ translation_table = np.array([[[b'K', b'N', b'K', b'N', b'X'],
 def convert_translation(positions_file):
     """ Converts the positional translation to a dictionary with alignment positions as keys and genome positions as"""
     positions = open(positions_file.name)
-    positions.readline()
+    # positions.readline()
     conversion = {}
     for eachPosition in positions:
         conversion[int(eachPosition.strip().split("\t")[0])] = int(eachPosition.strip().split("\t")[1])
@@ -169,9 +168,9 @@ def get_reference(reference, all_sites, alignment, positionTranslation):
     # sequence at each variable position. This means the updateReference function uses the root sequence as a
     # starting sequence and updates based on this
     else:
-        ref = AlignIO.read(reference.name, "fasta")
+        ref = next(SeqIO.parse(reference.name, "fasta"))
         # Extract the sequence of the reference and ensure it is uppercase
-        refSeq = ref[0].seq.upper()
+        refSeq = ref.seq.upper()
 
         # Reverse the position translation so genome positions are keys and alignment positions are values
         # Can then iterate through the genome positions and check if they are in this
@@ -299,7 +298,7 @@ def extract_position(gene_coordinates, position_in_gene):
         return (reverse_position + 1) // 3 + ((reverse_position + 1) % 3 != 0)
 
 
-# Reconstruct variant effects
+# Reconstructs variant effects
 def reconstruct_effects(clade, branch_mutations, updated_reference, reference_sequence,
                         variant_effect2clades, gene_coordinates, position_gene,
                         output_dir):
@@ -327,7 +326,10 @@ def reconstruct_effects(clade, branch_mutations, updated_reference, reference_se
 
     # intersect genes with variants
     var_chromosome, var_start, var_end, var_ref, var_alt = [[] for i in range(5)]
-    chromosome = position_gene.chromosomes[0]
+    # pick longest chromosome
+    chromosome = position_gene.df.groupby("Chromosome").End.max().idxmax()
+    # rather than first chromosome (can be arbitrary)
+    # chromosome = position_gene.chromosomes[0]
     for i in branch_mutations:
         var_chromosome.append(chromosome)
         var_start.append(i[2])

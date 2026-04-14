@@ -4,7 +4,7 @@ import argparse
 import os
 import sys
 
-from Bio import AlignIO, Phylo
+from Bio import SeqIO, AlignIO, Phylo
 
 import gff_conversion
 import isvalid
@@ -166,18 +166,33 @@ def main():
 
     # Import the original unlabelled tree
     if args.tree:
-        tree = Phylo.read(args.tree.name, "newick")
+        tree = Phylo.read(args.treetime_out + "annotated_tree.nexus", "nexus")
+        for node in tree.find_clades():
+            if node.name is None and node.confidence is not None:
+                node.name = node.confidence
         # Ladderize the tree so the branches are in the same order as the treetime tree
         tree.ladderize()
 
     print("Alignment and tree imported. Reconstructing variant effects")
 
-    gene_coordinates, position_gene = gff_conversion.convertGFF(args.gff.name)
+    gene_coordinates, position_gene, attribute_header = gff_conversion.convertGFF(args.gff.name)
     with open(args.output_dir + "gene_annotation.txt", 'w') as f:
         # header
-        f.write("start\tend\tstrand\tlocus_tag\tfeature\n")
+        f.write("start\tend\tstrand\tlocus_tag\tfeature")
+        # add attribute header
+        for attr in attribute_header:
+            f.write("\t" + attr)
+        f.write("\n")
         for value_list in gene_coordinates.values():
-            f.write("\t".join([str(i) for i in value_list]) + "\n")
+            f.write("\t".join([str(i) for i in value_list[0:5]]))
+            # add attributes
+            for attr in attribute_header:
+                if attr in value_list[5]:
+                    f.write("\t" + value_list[5][attr])
+                else:
+                    f.write("\t")
+            f.write("\n")
+
 
     #labelled_tree, tree_labels = labelAllBranches(tree)
 
@@ -185,7 +200,7 @@ def main():
     nucleotides = ["A", "C", "G", "T"]
 
     # get reference
-    ref = AlignIO.read(args.reference.name, "fasta")
+    ref = next(SeqIO.parse(args.reference.name, "fasta"))
     # Convert the positions in the alignment to genome positions, if --all_sites specified the positions will be the
     # same
     if args.all_sites:
@@ -197,7 +212,7 @@ def main():
         position_translation = rs.all_sites_translation(ref)
 
     # Extract the sequence of the reference and ensure it is uppercase
-    ref_seq = ref[0].seq.upper()
+    ref_seq = ref.seq.upper()
     # Extracts mutations to a dictionary from the branch_mutations.txt file
     if args.tree:
         if args.start_from_treetime:
@@ -231,7 +246,7 @@ def main():
         # If a tree is not provided, the reference sequence is assumed to be the first sequence in the alignment
         if not args.vcf and not args.variant_table:
             args.alignment.seek(0, 0)
-        reference_sequence = AlignIO.read(args.reference.name, "fasta")
+        reference_sequence = next(SeqIO.parse(args.reference.name, "fasta"))
         reference_sequence = reference_sequence[0].seq.upper()
     else:
         if args.reference:
