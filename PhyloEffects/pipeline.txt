@@ -1,0 +1,72 @@
+#example 
+#bash ~/aw27/all_paerug/v2_all_studies/convergent_evolution_pipeline_muttui.txt 427  snp-sites/ST  gubbins/ST/427/    . parsimony/  gubbins/ST/427.fasta  muttui/ST_v2   ~/aw27/pa_clinical/results/squeaky/v8/squeaky_server_data/pseudomonas_trusted/Pseudomonas_aeruginosa_PAO1_107_converted.gff   ~/aw27/pa_clinical/results/variant_calling/gatk4/Pseudomonas_aeruginosa_PAO1_v2.fa
+#needs the adjusted version of treetime to be installed
+
+#exit if any subcommand return non-zero
+set -e
+#name of cluster
+cluster=$1
+#snp-sites out 
+snp_sites=$2
+#gubbins in
+gubbins=$3
+#parsimony out 
+parsimony=$5
+#pseudoalignment in
+pseudoalignment=$6
+#muttui out 
+muttui=$7
+#genome annotation in
+gff=$8
+#genome fasta
+genome=$9
+
+muttui_repo=~/repos/PhyloEffects/PhyloEffects
+
+source ~/.bashrc
+##snp-sites
+conda activate phyloeffects
+echo "snp-sites"
+mkdir -p ${snp_sites}/
+# snp-sites -v -o ${snp_sites}/${cluster}.vcf   $pseudoalignment
+# snp-sites  -o ${snp_sites}/${cluster}.fasta   $pseudoalignment
+##pos mapping
+cat <(echo $'index\tposition') <(cut -f2  ${snp_sites}/${cluster}.vcf  | tail -n+5 | awk '{print NR"\t"$0}') > ${snp_sites}/${cluster}_pos_mapping.txt
+##extract tabular recombination prediction from Gubbins GFF 
+echo "parse gubbins output"
+python ${muttui_repo}/parse_gubbins.py  ${gubbins}/${cluster}.recombination_predictions.gff ${snp_sites}/${cluster}.recombination_prediction.txt
+python ${muttui_repo}/summarise_embl_output.py  ${gubbins}/${cluster}.branch_base_reconstruction.embl ${snp_sites}/${cluster}.recombination_pos.txt
+echo "rescale tree"
+mkdir -p ${muttui}
+python ${muttui_repo}/rescale_tree.py  ${gubbins}/${cluster}.node_labelled.final_tree.tre --rescale --alignment ${snp_sites}/${cluster}.fasta  --alignment_out  ${muttui}/${cluster}_aln.fasta  ${muttui}/${cluster}_rescaled.nwk
+echo "indel parsimony reconstruction"
+#mkdir -p ${parsimony}/indels_reconstructed/${cluster}
+#python ${muttui_repo}/pa_clinical/results/parsimony/parsimony.py ${muttui}/${cluster}_rescaled.nwk   ${parsimony}/indels/${cluster}_indels.txt   ${parsimony}/indels_reconstructed/${cluster}/ --tree_is_named
+
+echo "muttui"
+mkdir -p ${muttui}/${cluster}
+python ${muttui_repo}/phyloeffects.py -a ${muttui}/${cluster}_aln.fasta  -t ${muttui}/${cluster}_rescaled.nwk  -r $genome   -o ${muttui}/${cluster} -c  ${snp_sites}/${cluster}_pos_mapping.txt   -g $gff
+
+exit
+
+#indels
+##aggregate indels
+python ~/aw27/pa_clinical/results/variant_calling/multiple_mapping_to_bam/aggregate_indels.py ~/aw27/pa_clinical/results/variant_calling/gatk4/Pseudomonas_aeruginosa_PAO1_v2.fa    <(ls indel_calling/*.mfa)     <(ls indel_calling/*indels.txt)  <(ls indel_calling/*failed.txt)   indels_aggr.txt indels_aggr.vcf
+
+##indels
+cut -f1-10 indels_aggr.vcf   > indels_cut.vcf
+snpEff  PAO1  indels_cut.vcf   -nodownload  -dataDir ~/aw27/pa_clinical/results/snpeff/data/ -c  ~/aw27/pa_clinical/results/snpeff/snpEff.config  > pseudo_effect_indels.vcf
+
+
+##parse snpEff output
+python ../../snpeff2id.py pseudo_effect_indels.vcf  pseudo_effect_indels.txt
+
+
+##ST specific indels
+##lsf.py
+python collect_indels_per_st.py parsimony/indels/ dating/collection_date_hc.txt  ST --indels ~/aw27/public_within_patient_cf_paerug/results/variant_calling/dtu/indels_aggr.txt   ~/aw27/public_within_patient_cf_paerug/results/variant_calling/sickkids/indels_aggr.txt   ~/aw27/public_across_patient_paerug/results/variant_calling/hzi_amr/indels_aggr.txt ~/aw27/public_across_patient_paerug/results/variant_calling/bacteremia/indels_aggr.txt
+
+
+#convergent evolution statistical analysis (misses some column names)
+plot_distribution.R
+
