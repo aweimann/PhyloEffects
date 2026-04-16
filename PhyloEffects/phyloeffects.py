@@ -14,7 +14,7 @@ from run_treetime import run_treetime
 
 
 # Parse command line options
-def get_options():
+def get_options(argv=None):
     description = "Run the PhyloEffects pipeline on a given alignment and tree"
 
     parser = argparse.ArgumentParser(description=description)
@@ -124,15 +124,14 @@ def get_options():
                         action="version",
                         version="%(prog)s " + __version__)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     # if treetime directory is not set; set to output directory
     if args.treetime_out is None:
         args.treetime_out = args.output_dir
     return args
 
 
-def main():
-    args = get_options()
+def run_with_args(args):
 
     # Make sure trailing forward slash is present in output directory
     args.output_dir = os.path.join(args.output_dir, "")
@@ -284,5 +283,12 @@ def main():
 
     for variant_effect, clades in variant_effect2clades.items():
         effects.write(variant_effect.to_string() + "\t" + ",".join(clades) + "\n")
+
+
+def main(argv=None):
+    args = get_options(argv)
+    run_with_args(args)
+
+
 if __name__ == "__main__":
     main()
