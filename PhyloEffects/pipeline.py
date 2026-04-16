@@ -59,8 +59,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("snp_sites", help="Path prefix for snp-sites outputs")
     parser.add_argument("gubbins", help="Path prefix for Gubbins outputs")
     parser.add_argument(
-        "legacy_arg4",
-        help="Unused placeholder for compatibility with original Bash interface",
+        "outgroup",
+        help="Outgroup for tree pruning",
     )
     parser.add_argument("parsimony", help="Parsimony output path (currently unused)")
     parser.add_argument("pseudoalignment", help="Pseudoalignment input path")
@@ -114,13 +114,13 @@ def main() -> int:
         output_tree=str(muttui_dir / f"{cluster}_rescaled.nwk"),
         alignment=str(aln_file),
         alignment_out=str(muttui_dir / f"{cluster}_aln.fasta"),
-        outgroup=None,
+        outgroup=args.outgroup,
         midpoint=False,
         rescale=True,
         relabel=False,
     )
 
-    print("muttui")
+    print("PhyloEffects")
     (muttui_dir / cluster).mkdir(parents=True, exist_ok=True)
     run_phyloeffects(
         [

@@ -165,7 +165,7 @@ def run_with_args(args):
 
     # Import the original unlabelled tree
     if args.tree:
-        tree = Phylo.read(args.treetime_out + "annotated_tree.nexus", "nexus")
+        tree = Phylo.read(os.path.join(args.treetime_out, "annotated_tree.nexus"), "nexus")
         for node in tree.find_clades():
             if node.name is None and node.confidence is not None:
                 node.name = node.confidence
