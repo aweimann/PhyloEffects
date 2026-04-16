@@ -64,7 +64,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("parsimony", help="Parsimony output path (currently unused)")
     parser.add_argument("pseudoalignment", help="Pseudoalignment input path")
-    parser.add_argument("muttui", help="Output path for phylogenetic effect outputs")
+    parser.add_argument("phyloeffects", help="Output path for phylogenetic effect outputs")
     parser.add_argument("gff", help="Genome annotation GFF input")
     parser.add_argument("genome", help="Reference genome FASTA input")
     parser.add_argument(
@@ -79,12 +79,16 @@ def main() -> int:
     args = parse_args()
 
     cluster = args.cluster
-
-    snp_sites_dir = Path(args.snp_sites)
+    # gubbins output dir
     gubbins_dir = Path(args.gubbins)
-    muttui_dir = Path(args.muttui)
 
-    snp_sites_dir.mkdir(parents=True, exist_ok=True)
+    # snp-sites output dir
+    snp_sites_dir = Path(args.snp_sites)
+    phyloeffects_dir = Path(args.phyloeffects)
+    # check if these directories exist, if not create them
+    for directory in [snp_sites_dir, phyloeffects_dir]:
+        directory.mkdir(parents=True, exist_ok=True)
+
 
     vcf_file = snp_sites_dir / f"{cluster}.vcf"
     aln_file = snp_sites_dir / f"{cluster}.fasta"
@@ -108,12 +112,12 @@ def main() -> int:
     )
 
     print("rescale tree")
-    muttui_dir.mkdir(parents=True, exist_ok=True)
+    phyloeffects_dir.mkdir(parents=True, exist_ok=True)
     prune_tree(
         input_tree=str(gubbins_dir / f"{cluster}.node_labelled.final_tree.tre"),
-        output_tree=str(muttui_dir / f"{cluster}_rescaled.nwk"),
+        output_tree=str(phyloeffects_dir / f"{cluster}_rescaled.nwk"),
         alignment=str(aln_file),
-        alignment_out=str(muttui_dir / f"{cluster}_aln.fasta"),
+        alignment_out=str(phyloeffects_dir / f"{cluster}_aln.fasta"),
         outgroup=args.outgroup,
         midpoint=False,
         rescale=True,
@@ -121,17 +125,17 @@ def main() -> int:
     )
 
     print("PhyloEffects")
-    (muttui_dir / cluster).mkdir(parents=True, exist_ok=True)
+    (phyloeffects_dir / cluster).mkdir(parents=True, exist_ok=True)
     run_phyloeffects(
         [
             "-a",
-            str(muttui_dir / f"{cluster}_aln.fasta"),
+            str(phyloeffects_dir / f"{cluster}_aln.fasta"),
             "-t",
-            str(muttui_dir / f"{cluster}_rescaled.nwk"),
+            str(phyloeffects_dir / f"{cluster}_rescaled.nwk"),
             "-r",
             str(args.genome),
             "-o",
-            str(muttui_dir / cluster),
+            str(phyloeffects_dir / cluster),
             "-c",
             str(pos_map_file),
             "-g",
