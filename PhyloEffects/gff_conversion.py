@@ -22,7 +22,10 @@ def clean_gff_string(gff_string):
 #Takes a GFF file and returns a list of lists
 #Each entry in list is a gene with 4 components - gene name, gene start, gene end, strand
 def convertGFF(gff_file_name):
-    gff_file = gzip.open(gff_file_name, "rt",encoding='utf-8')
+    if gff_file_name.endswith(".gz"):
+        gff_file = gzip.open(gff_file_name, "rt", encoding='utf-8')
+    else:
+        gff_file = open(gff_file_name, "r", encoding='utf-8')
 
     #Open file, split into genes and sequence
     lines = gff_file.read().replace(",", "")
