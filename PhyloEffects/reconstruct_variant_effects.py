@@ -46,7 +46,10 @@ translation_table = np.array([[[b'K', b'N', b'K', b'N', b'X'],
 def convert_translation(positions_file):
     """ Converts the positional translation to a dictionary with alignment positions as keys and genome positions as"""
     positions = open(positions_file.name)
-    # positions.readline()
+    # check if the first line is a header, if so skip it
+    header = positions.readline()
+    if header.startswith("pos"):
+        pass
     conversion = {}
     for eachPosition in positions:
         conversion[int(eachPosition.strip().split("\t")[0])] = int(eachPosition.strip().split("\t")[1])
