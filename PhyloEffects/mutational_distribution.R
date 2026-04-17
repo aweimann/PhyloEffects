@@ -29,7 +29,7 @@ scientific_10 <- function(x) {
 manhattan <- function(g, by){
     
     
-g  %>% ggplot(aes(position, pval, label = locus_tag)) +#, color = !!sym(by))) +
+g  %>% ggplot(aes(position, pval, label = ifelse(!is.na(gene), gene, locus_tag))) +#, color = !!sym(by))) +
     geom_hline(aes(yintercept = (g %>% filter(padj < 0.05) %>% ungroup() %>% summarize(max(pval)))[[1]])) +
     geom_point(pch = 21) +
     geom_text_repel(size = 6) +
@@ -71,20 +71,41 @@ gg_qqplot <- function(ps, ci = 0.95) {
 # v <-  st_df %>% select(st, mutations) %>% mutate(mutations = map(mutations, ~ read_tsv(., col_types = cols(.default = col_character(), pos = col_integer())))) %>% unnest(cols = c(mutations))  %>% rename(ref = upstream_allele, alt = downstream_allele)
 
 #when looking at intergenic regions only consider upstream gene variants
-annot <- read_tsv("muttui_out/st25_subs/gene_annotation.txt")
+ wd <- "/Users/aweimann/Library/CloudStorage/OneDrive-UniversityofCambridge/cambridge_postdoc/current_results/burden_test_spectra_dataset/"
+ phyloeffects_in <- "phyloeffects_out/S_aureus_CC398/"
+ burden_test_out <- "burden_test_out/S_aureus_CC398/"
+ dataset <- "S_aureus_CC398"
+ setwd(wd)
+ args <- c(dataset, phyloeffects_in, burden_test_out, wd)
+options(show.error.locations = TRUE)
 
-sts = c("st25_subs")
+#args = commandArgs(trailingOnly=TRUE)
+# setwd(args[2])
+# dataset = args[1]
+# phyloeffects_in <- args[3]
+# burden_test_out <- args[4] 
+
+
+annot <- read_tsv(str_c(phyloeffects_in, "/gene_annotation.txt"))
+
+# remove tRNA, rRNA and transposases
+annot <- annot %>% filter(!(feature %in% c("rRNA", "tRNA")) ) %>% 
+  filter(!str_detect(product, "transposase"))
+
+sts = c(dataset)
 st_df <- tibble(st = sts)
 
 
 st_df <-
-    mutate(st_df, mutations = str_c("muttui_out/st25_subs/variant_effect_predictions.txt"))  %>%
-    mutate(st_df, recombination = str_c("snp-sites/", st, ".recombination_prediction.txt")) %>%
+    mutate(st_df, mutations = str_c(phyloeffects_in, st, "/variant_effect_predictions.txt"))  # %>%
+    mutate(st_df, recombination = str_c("snp-sites/", st, ".recombination_prediction.txt")) #%>%
     mutate(st_df, recombination_pos = str_c("snp-sites/", st, ".recombination_pos.txt"))
 
 v <-  st_df %>% select(st, mutations) %>% mutate(mutations = map(mutations, ~ read_tsv(., col_types = cols(.default = col_character(), pos = col_integer())))) %>% unnest(cols = c(mutations))  %>% rename(ref = upstream_aa, alt = downstream_aa)
 v <- v %>% separate_rows(samples, sep = ",") 
-v <- v %>% filter(!(samples %in% c("NC_009648.1", "Node_37", "Node_474", "ERR775516", "Node_476", "Node_461", "Node_475")))
+#v <- v %>% filter(!(samples %in% c("NC_009648.1", "Node_37", "Node_474", "ERR775516", "Node_476", "Node_461", "Node_475")))
+#C acnes
+# v <- v %>% filter(!(samples %in% c("NODE_0000001", "NODE_0000051")))
 
 
 #read in indels
@@ -100,12 +121,12 @@ v <- v %>% filter(impact != "MODIFIER")
 
 #remove recombination sites
 #read in recombination position and interval 
-recombination <- st_df %>% select(st, recombination) %>%mutate(recombination = map(recombination, ~ read_tsv(., col_types = cols(.default = col_character(), start = col_integer(), stop = col_integer()))))  %>% unnest(cols = c(recombination)) %>% rename(end = stop)
-gubbins_embl <- st_df %>% select(st, recombination_pos) %>%mutate(recombination_pos = map(recombination_pos, ~ read_tsv(., col_types = cols(.default = col_character(), pos = col_integer()))))  %>% unnest(cols = c(recombination_pos)) 
-recomb_pos <- gubbins_embl %>% mutate(start = pos, end = pos + 1)  %>% genome_join(recombination,  by = c("st", "start", "end")) %>% filter(node.x == node.y) %>% select(-node.y, - start.y, -st.y) %>% rename(st = st.x) %>% select(pos, "st")
+#recombination <- st_df %>% select(st, recombination) %>%mutate(recombination = map(recombination, ~ read_tsv(., col_types = cols(.default = col_character(), start = col_integer(), stop = col_integer()))))  %>% unnest(cols = c(recombination)) %>% rename(end = stop)
+#gubbins_embl <- st_df %>% select(st, recombination_pos) %>%mutate(recombination_pos = map(recombination_pos, ~ read_tsv(., col_types = cols(.default = col_character(), pos = col_integer()))))  %>% unnest(cols = c(recombination_pos)) 
+#recomb_pos <- gubbins_embl %>% mutate(start = pos, end = pos + 1)  %>% genome_join(recombination,  by = c("st", "start", "end")) %>% filter(node.x == node.y) %>% select(-node.y, - start.y, -st.y) %>% rename(st = st.x) %>% select(pos, "st")
 #remove recombination from multi codon substitutions and standard substitutions separately as MCS positions might not agree with Gubbins positions
-v_mcs <- v  %>% filter(!is.na(multi_codon_substitution)) %>% mutate(start = pos, end =  pos + 2) %>%  genome_anti_join(recomb_pos %>% mutate(start = pos, end = pos + 1), by = c("st", "start", "end"))  %>% select(-start, -end)
-v <- v %>% filter(is.na(multi_codon_substitution)) %>% anti_join(recomb_pos)
+# v_mcs <- v  %>% filter(!is.na(multi_codon_substitution)) %>% mutate(start = pos, end =  pos + 2) %>%  genome_anti_join(recomb_pos %>% mutate(start = pos, end = pos + 1), by = c("st", "start", "end"))  %>% select(-start, -end)
+# v <- v %>% filter(is.na(multi_codon_substitution)) %>% anti_join(recomb_pos)
 # v <- bind_rows(v, v_mcs)
 
 #intergenic mutations
@@ -122,6 +143,7 @@ v <- v %>%  filter(mutation_type != "upstream_gene_variant" & mutation_type != "
 
 #stratify by synonymous vs. non-synonymous variants 
 mod <-  v  %>% group_by(locus_tag) %>% filter(impact == "LOW") %>% count() %>% arrange(-n) 
+mod <- annot %>% select(locus_tag) %>% left_join(mod) %>% mutate(n = ifelse(is.na(n), 0, n))
 high <-  v  %>% group_by(locus_tag) %>%   filter(impact != "LOW") %>% count() %>% arrange(-n) 
 
 #count global number of mutations
@@ -135,7 +157,7 @@ impact <- v %>%   group_by(locus_tag, impact)  %>% count() %>% spread(impact, n,
 # per_patient <- v  %>%  filter(impact != "LOW") %>%  group_by(locus_tag, gene_name, st) %>% count() %>% spread(st, n, fill = 0)
 #count number of STs mutations in a particular gene are found 
 #per_st <- v  %>%  filter(impact != "LOW") %>%  group_by(locus_tag, st) %>% count()  %>%  group_by(PAO1, gene_name) %>% count() %>% rename(no_sts = n)
-comb <- comb %>% inner_join(impact) %>% inner_join(mutation_type)
+comb <- comb %>% left_join(impact) %>% left_join(mutation_type)
 uq_variants <-  v %>% group_by(locus_tag, pos, upstream_allele, downstream_allele) %>% filter(impact != "LOW") %>% 
     summarize(unique_variants = 1) %>% group_by(locus_tag) %>% 
     summarize(unique_variants = sum(unique_variants))
@@ -146,18 +168,38 @@ total_length <- (mutate(annot, gene_length = end - start)  %>% ungroup() %>%  su
 total_length <- (mutate(annot, gene_length = end - start)  %>% 
                  ungroup() %>% 
                  summarize(total_length = sum(gene_length) - 0 ))$total_length
-comb <- comb %>% inner_join(uq_variants) %>%
+comb <- comb %>% left_join(uq_variants) %>%
     inner_join(annot) %>% 
-    mutate(gene_length = end - start, position = start) %>% 
-    select(locus_tag, n.x, n.y, dn_ds, gene_length,  position, HIGH:point_mutation, unique_variants) %>% 
-    mutate(d.x_mod = n.y * 1000/gene_length) %>% arrange(-d.x_mod) 
+    mutate(gene_length = end - start, position = start) 
+if("HIGH" %in% colnames(comb)){
+  comb <- comb %>% select(locus_tag, n.x, n.y, dn_ds, gene_length,  position, HIGH:point_mutation, unique_variants) 
+}else{
+  comb <- comb %>% select(locus_tag, n.x, n.y, dn_ds, gene_length,  position, MODERATE:point_mutation, unique_variants) 
+}
+comb <- comb %>% mutate(d.x_mod = n.y * 1000/gene_length) %>% arrange(-d.x_mod) 
 no_mutations <- comb %>% ungroup() %>% summarize(sum(n.y)) %>% as_vector()
 out = "burden_test/"
 
-comb <- comb   %>%  
-    rowwise() %>% 
-    mutate(r = no_mutations*(gene_length /(total_length)), pval = poisson.test(n.y,r=r, alternative = "greater")['p.value'][[1]])
+# comb <- comb   %>%  
+#     rowwise() %>% 
+#     mutate(r = no_mutations*(gene_length /(total_length)), pval = poisson.test(n.y,r=r, alternative = "greater")['p.value'][[1]])
+
+poisson_midp <- function(x, lambda) {
+  # P(X > x)
+  p_greater <- ppois(x, lambda, lower.tail = FALSE)
+  # P(X = x)
+  p_equal <- dpois(x, lambda)
+  
+  # Mid-p formula
+  mid_p <- p_greater + 0.5 * p_equal
+  return(mid_p)
+}
+
+comb <- comb  %>% mutate(r = no_mutations*(gene_length /(total_length)), 
+                         pval = poisson_midp(n.y, lambda = r))
 comb$padj <- p.adjust(comb$pval, method = "BH")
+
+
 
 comb <- comb %>% mutate(is_sig = ifelse(padj < 0.05, "sig", "non-sig"))
 # comb <- comb %>% inner_join(per_st)
@@ -165,15 +207,53 @@ comb <- comb %>% mutate(is_sig = ifelse(padj < 0.05, "sig", "non-sig"))
 # ggsave("padj_vs_no_sts.png")
 
 
-comb %>% filter(padj < 0.05) %>% select(locus_tag)  %>% inner_join(v) %>% filter(impact != "LOW")%>% write_tsv("variants_in_burden_hits.txt")
+# comb %>% filter(padj < 0.05) %>% select(locus_tag)  %>% inner_join(v) %>% filter(impact != "LOW")%>% write_tsv("variants_in_burden_hits.txt")
 
-comb <- comb  %>% arrange(padj) %>%  write_tsv(str_c(out,"poisson_test.txt"))
+comb <- comb  %>% arrange(padj) %>% inner_join(annot) %>% write_tsv(str_c(burden_test_out, "/", dataset, "_poisson_test.txt"))
 manhattan(comb)
-ggsave(str_c(out,"manhattan_poisson_test.pdf"), width = 18)
+ggsave(str_c(burden_test_out, "/", dataset, "_manhattan_poisson_test.pdf"), width = 18)
 gg_qqplot(comb$pval)
-ggsave(str_c(out,"qqplot_poisson_test.pdf"))
+ggsave(str_c(burden_test_out, "/", dataset, "_qqplot_poisson_test.pdf"))
 
 burden_variants <- comb %>% filter(padj < 0.05) %>% select(locus_tag)  %>% inner_join(v) %>% filter(impact != "LOW")
-burden_variants %>% write_tsv("variants_in_burden_hits.txt")
+# burden_variants %>% write_tsv("variants_in_burden_hits.txt")
 
+# test internal vs terminal nodes
+is_transmitted <- v %>% filter(mutation_type != "LOW") %>% mutate(is_internal = str_detect(samples, "NODE")) %>% 
+  group_by(locus_tag, is_internal) %>% 
+  count() %>% 
+  pivot_wider(names_from = is_internal, values_from = n, values_fill = 0) 
+is_transmitted <- rename(is_transmitted, transmitted = `TRUE`, untransmitted = `FALSE`) 
+  
+total <- is_transmitted %>% ungroup () %>% summarise(untransmitted = sum(untransmitted), transmitted = sum(transmitted))
+is_transmitted$untransmitted_total <- total$untransmitted
+is_transmitted$transmitted_total <- total$transmitted
+is_transmitted %>% inner_join(comb %>% filter(padj < 0.05))
+f_test <- is_transmitted %>% inner_join(comb %>% filter(padj < 0.05))  %>% 
+  mutate(ftest = list(fisher.test(matrix(c(transmitted, untransmitted, transmitted_total, untransmitted_total), nrow = 2))))
+f_test <- f_test %>% mutate(transmission_pval = ftest[[1]]$p.value, transmission_odds_ratio = ftest[[1]]$estimate) 
+f_test$transmission_padj <- p.adjust(f_test$transmission_pval, method = "BH")
+comb <- comb %>% left_join(f_test %>% select(-ftest))
+comb <- comb  %>% arrange(padj) %>% write_tsv(str_c(burden_test_out, "/", dataset, "_poisson_test_w_transmission.txt"))
+
+
+# test animal vs human
+# is_human <- v %>% filter(mutation_type != "LOW") %>% 
+#   filter(!str_detect(samples, "NODE")) %>% 
+#   mutate(is_internal = str_detect(samples, "Human")) %>% 
+#   group_by(locus_tag, is_internal) %>% 
+#   count() %>% 
+#   pivot_wider(names_from = is_internal, values_from = n, values_fill = 0) 
+# is_human <- rename(is_human, human = `TRUE`, animal = `FALSE`) 
+#   
+# total <- is_human %>% ungroup () %>% summarise(animal = sum(animal), human = sum(human))
+# is_human$animal_total <- total$animal
+# is_human$human_total <- total$human
+# is_human %>% inner_join(comb %>%  filter(padj < 0.05))
+# f_test_human <- is_human %>% inner_join(comb %>% select(locus_tag, padj) %>% filter(padj < 0.05))  %>% 
+#   mutate(ftest = list(fisher.test(matrix(c(human, animal, human_total, animal_total), nrow = 2))))
+# f_test_human <- f_test_human %>% mutate(host_pval = ftest[[1]]$p.value, host_odds_ratio = ftest[[1]]$estimate) 
+# f_test_human$host_padj <- p.adjust(f_test_human$host_pval, method = "BH")
+# comb <- comb %>% left_join(f_test_human %>% select(-ftest))
+# comb <- comb  %>% arrange(padj) %>% write_tsv(str_c(burden_test_out, "/", dataset, "_poisson_test_w_animal_vs_human.txt"))
 
