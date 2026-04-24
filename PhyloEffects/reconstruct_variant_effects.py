@@ -325,7 +325,13 @@ def reconstruct_effects(clade, branch_mutations, updated_reference, reference_se
     positions_to_remove = []
 
     # open file for writing effect predictions to disk
-    effects = open(output_dir + output_prefix + "variant_effect_predictions.txt", "a")
+    # add prefix to output file name if specified, otherwise just use variant_effect_predictions.txt
+    if output_prefix:
+        output_filename = output_prefix + ".variant_effect_predictions.txt"
+    else:
+        output_filename = "variant_effect_predictions.txt"
+
+    effects = open(output_dir + output_filename, "a")
 
     # intersect genes with variants
     var_chromosome, var_start, var_end, var_ref, var_alt = [[] for i in range(5)]

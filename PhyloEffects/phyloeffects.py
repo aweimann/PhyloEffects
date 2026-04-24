@@ -238,7 +238,10 @@ def run_with_args(args):
 
 
     # Iterate through the branches
-    output_filename = args.output_prefix + ".variant_effect_predictions.txt"
+    if args.output_prefix:
+        output_filename = args.output_prefix + ".variant_effect_predictions.txt"
+    else:
+        output_filename = "variant_effect_predictions.txt"
     effects = open(args.output_dir + output_filename, "w")
     effects.write("\t".join(
         ["pos", "upstream_allele", "downstream_allele", "mutation_type", "upstream_aa", "downstream_aa",
