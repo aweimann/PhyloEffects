@@ -5,6 +5,8 @@ library(ggrepel)
 library(forcats)
 library(fuzzyjoin)
 library(stringr)
+library(argparse)
+
 #library(ggtree)
 #library(ape)
 
@@ -76,15 +78,38 @@ gg_qqplot <- function(ps, ci = 0.95) {
 # args <- c(dataset, phyloeffects_in, burden_test_out, wd)
 options(show.error.locations = TRUE)
 
-args <- commandArgs(trailingOnly=TRUE)
-dataset <- args[1] %>% str_split(",") %>% unlist() %>% str_trim()
-setwd(args[2])
-phyloeffects_in <- args[3]
-burden_test_out <- args[4]
+
+# make options for command line arguments
+# include a flag to specify whether to remove recombination regions or not
+parser <- ArgumentParser()
+parser$add_argument("-d", "--dataset", type = "character", required = TRUE,
+                    help = "Comma separated list of datasets to include in the analysis")
+parser$add_argument("-w", "--working_dir", type = "character", required = TRUE,
+                    help = "Working directory where the input files are located and output files will be saved")
+parser$add_argument("-p", "--phyloeffects_in", type = "character", required = TRUE,
+                    help = "Directory where the phyloeffects output files are located")
+parser$add_argument("-b", "--burden_test_out", type = "character", required = TRUE,
+                    help = "Directory where the burden test output files will be saved")
+parser$add_argument("-a", "--gene_annotation", type = "character", required = TRUE,
+                    help = "Gene annotation file in tsv format with columns: locus_tag, gene_name, feature, product, start, end")
+parser$add_argument("-r", "--no_recombination_removal", action = "store_true", default = FALSE,
+                    help = "Flag to specify whether to remove recombination regions")
+
+opt <- parser$parse_args()
+dataset <- opt$dataset
 # comma separated list of STs to include in the analysis
 sts <- dataset
+working_dir <- opt$working_dir
+print(working_dir)
+setwd(working_dir)
+phyloeffects_in <- opt$phyloeffects_in
+burden_test_out <- opt$burden_test_out
+gene_annotation <- opt$gene_annotation
+dataset <-  dataset %>% str_split(",") %>% unlist() %>% str_trim()
+# flag to specify whether to remove recombination regions or not
+no_recombination_removal <- opt$no_recombination_removal
 
-annot <- read_tsv(str_c(phyloeffects_in, "/gene_annotation.txt"))
+annot <- read_tsv(gene_annotation)
 
 # remove tRNA, rRNA and transposases
 annot <- annot %>% filter(!(feature %in% c("rRNA", "tRNA")) ) %>% 
@@ -111,18 +136,31 @@ v <- v %>% separate_rows(samples, sep = ",")
 # indels <- indels %>% inner_join(annot)
 
 # v <- bind_rows(v, indels)
-v <- v %>% filter(impact != "MODIFIER")
+# v <- v %>% filter(impact != "MODIFIER")
 
 #remove recombination sites
 #read in recombination position and interval 
-recombination <- st_df %>% select(st, recombination) %>%mutate(recombination = map(recombination, ~ read_tsv(., col_types = cols(.default = col_character(), start = col_integer(), stop = col_integer()))))  %>% unnest(cols = c(recombination)) %>% rename(end = stop)
-gubbins_embl <- st_df %>% select(st, recombination_pos) %>%mutate(recombination_pos = map(recombination_pos, ~ read_tsv(., col_types = cols(.default = col_character(), pos = col_integer()))))  %>% unnest(cols = c(recombination_pos)) 
-recomb_pos <- gubbins_embl %>% mutate(start = pos, end = pos + 1)  %>% genome_join(recombination,  by = c("st", "start", "end")) %>% filter(node.x == node.y) %>% select(-node.y, - start.y, -st.y) %>% rename(st = st.x) %>% select(pos, "st")
+if (!no_recombination_removal) {
+  recombination <- st_df %>% select(st, recombination) %>%mutate(recombination = map(recombination, ~ read_tsv(., col_types = cols(.default = col_character(), start = col_integer(), stop = col_integer()))))  %>% unnest(cols = c(recombination)) %>% rename(end = stop)
+  gubbins_embl <- st_df %>% select(st, recombination_pos) %>%mutate(recombination_pos = map(recombination_pos, ~ read_tsv(., col_types = cols(.default = col_character(), pos = col_integer()))))  %>% unnest(cols = c(recombination_pos)) 
+  recomb_pos <- gubbins_embl %>% mutate(start = pos, end = pos + 1)  %>% genome_join(recombination,  by = c("st", "start", "end")) %>% filter(node.x == node.y) %>% select(-node.y, - start.y, -st.y) %>% rename(st = st.x) %>% select(pos, "st")
+}
 
 #remove recombination from multi codon substitutions and standard substitutions separately as MCS positions might not agree with Gubbins positions
+if (!no_recombination_removal) {
 v_mcs <- v  %>% filter(!is.na(multi_codon_substitution)) %>% mutate(start = pos, end =  pos + 2) %>%  genome_anti_join(recomb_pos %>% mutate(start = pos, end = pos + 1), by = c("st", "start", "end"))  %>% select(-start, -end)
 v <- v %>% filter(is.na(multi_codon_substitution)) %>% anti_join(recomb_pos)
+}
+
 v <- bind_rows(v, v_mcs)
+
+
+v <- v %>% filter(samples != "NC_009648.1")
+v <- v %>% filter(st != "st25" & !(samples %in% c("NC_009648.1", "Node_37", "Node_474", "ERR775516", "Node_476", "Node_461", "Node_475")))
+v <- v %>% filter(st != "st14" & !(samples %in% c("Node_2421")))
+v <- v %>% filter(st != "st258" | !(samples %in% c("NC_009648.1", "Node_496", "Node_498", 
+                                                         "Node_497", "Node_495", "ERR1334502", "ERR1217461")))
+
 
 #intergenic mutations
 # intergenic_mutations <- v %>% group_by(st, node, pos, ref, alt) %>% filter(mutation_type == "upstream_gene_variant" | mutation_type == "downstream_gene_variant") %>% mutate(PAO1 = ifelse(length(PAO1) == 2, str_c(PAO1[1], PAO1[2], sep = ","), PAO1), gene_name = ifelse(length(gene_name) == 2,str_c(gene_name[1], gene_name[2], sep = ","), gene_name), n = length(PAO1)) %>% group_by(st, node, pos, ref, alt, PAO1, gene_name) %>% count() %>% group_by(PAO1, gene_name) %>% count() %>% arrange(-n)
@@ -132,8 +170,8 @@ v <- bind_rows(v, v_mcs)
 # total_mutations <- intergenic_mutations %>% ungroup() %>% summarize(sum(n))
 # intergenic_mutations <- intergenic_mutations   %>%  mutate(pval = poisson.test(n, r=total_mutations[[1]]*(gene_length/(total_length_intergenic[[1]])), alternative = "greater")['p.value'][[1]])
 # intergenic_mutations$padj <- p.adjust(intergenic_mutations$pval, method = "BH")
-v <- v %>%  filter(mutation_type != "upstream_gene_variant" & mutation_type != "downstream_gene_variant")
-#v <- v %>%  filter(mutation_type != "upstream_gene_variant")
+# v <- v %>%  filter(mutation_type != "upstream_gene_variant" & mutation_type != "downstream_gene_variant")
+v <- v %>%  filter(mutation_type != "upstream_gene_variant")
 
 
 #stratify by synonymous vs. non-synonymous variants 
