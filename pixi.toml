@@ -1,0 +1,19 @@
+[workspace]
+authors = ["Aaron Weimann <aw807@cam.ac.uk>"]
+channels = ["conda-forge", "bioconda"]
+name = "PhyloEffects"
+platforms = ["osx-arm64", "linux-64", "osx-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+gffutils = "==0.12"
+treetime = "==0.11.2"
+pyranges = "==0.0.129"
+setuptools = "<=81"
+cyvcf2 = ">=0.32.1,<0.33"
+r-argparse = ">=2,<3"
+r-tidyverse = ">=2.0.0,<3"
+r-ggrepel = ">=0.9.8,<0.10"
+r-fuzzyjoin = ">=0.1.8,<0.2"
