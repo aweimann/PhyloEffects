@@ -304,7 +304,7 @@ def extract_position(gene_coordinates, position_in_gene):
 # Reconstructs variant effects
 def reconstruct_effects(clade, branch_mutations, updated_reference, reference_sequence,
                         variant_effect2clades, gene_coordinates, position_gene,
-                        output_dir):
+                        output_dir, output_prefix=""):
     # Gene sequences at the upstream node
     upstream_genes = dict()
     # Gene sequences containing mutations along the branch
@@ -325,7 +325,7 @@ def reconstruct_effects(clade, branch_mutations, updated_reference, reference_se
     positions_to_remove = []
 
     # open file for writing effect predictions to disk
-    effects = open(output_dir + "variant_effect_predictions.txt", "a")
+    effects = open(output_dir + output_prefix + "variant_effect_predictions.txt", "a")
 
     # intersect genes with variants
     var_chromosome, var_start, var_end, var_ref, var_alt = [[] for i in range(5)]

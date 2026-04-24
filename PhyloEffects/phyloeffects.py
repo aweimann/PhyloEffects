@@ -50,6 +50,11 @@ def get_options(argv=None):
                          required=True,
                          help="Location of output directory, should already be created and ideally be empty",
                          type=lambda x: isvalid.is_valid_folder(parser, x))
+    io_opts.add_argument("--output_prefix",
+                         dest="output_prefix",
+                         required=False,
+                         default="",
+                         help="Optional prefix for variant_effect_predictions.txt (becomes <prefix>.variant_effect_predictions.txt). If not specified, defaults to empty string so output file is variant_effect_predictions.txt")
     io_opts.add_argument("-r",
                          "--reference",
                          dest="reference",
@@ -233,7 +238,8 @@ def run_with_args(args):
 
 
     # Iterate through the branches
-    effects = open(args.output_dir + "variant_effect_predictions.txt", "w")
+    output_filename = args.output_prefix + ".variant_effect_predictions.txt"
+    effects = open(args.output_dir + output_filename, "w")
     effects.write("\t".join(
         ["pos", "upstream_allele", "downstream_allele", "mutation_type", "upstream_aa", "downstream_aa",
          "reference_aa", "upstream_codon", "downstream_codon", "reference_codon", "impact", "aa_change",
@@ -278,7 +284,7 @@ def run_with_args(args):
                 updated_reference = reference_sequence
             # infer variant effects
             rs.reconstruct_effects(clade, branch_mutations, updated_reference, ref_seq, variant_effect2clades,
-                                   gene_coordinates, position_gene, args.output_dir)
+                                   gene_coordinates, position_gene, args.output_dir, args.output_prefix)
 
 
     for variant_effect, clades in variant_effect2clades.items():
