@@ -67,11 +67,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("phyloeffects", help="Output path for phylogenetic effect outputs")
     parser.add_argument("gff", help="Genome annotation GFF input")
     parser.add_argument("genome", help="Reference genome FASTA input")
-    parser.add_argument(
-        "--run-snp-sites",
-        action="store_true",
-        help="Also run snp-sites VCF and FASTA generation (commented out in legacy Bash script)",
-    )
     return parser.parse_args()
 
 
@@ -94,7 +89,9 @@ def main() -> int:
     aln_file = snp_sites_dir / f"{cluster}.fasta"
     pos_map_file = snp_sites_dir / f"{cluster}_pos_mapping.txt"
 
-    if args.run_snp_sites:
+
+    # check if snp-sites outputs already exist, if not run snp-sites
+    if not vcf_file.exists() or not aln_file.exists():
         print("snp-sites")
         run_command(["snp-sites", "-v", "-o", str(vcf_file), str(args.pseudoalignment)])
         run_command(["snp-sites", "-o", str(aln_file), str(args.pseudoalignment)])
