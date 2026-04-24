@@ -1,1 +1,6 @@
 PhyloEffects/__pycache__/*
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+PhyloEffects/.DS_Store
+.DS_Store
