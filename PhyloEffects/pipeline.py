@@ -56,7 +56,6 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument("cluster", help="Name of cluster")
-    parser.add_argument("snp_sites", help="Path prefix for snp-sites outputs")
     parser.add_argument("gubbins", help="Path prefix for Gubbins outputs")
     parser.add_argument(
         "outgroup",
@@ -77,17 +76,15 @@ def main() -> int:
     # gubbins output dir
     gubbins_dir = Path(args.gubbins)
 
-    # snp-sites output dir
-    snp_sites_dir = Path(args.snp_sites)
     phyloeffects_dir = Path(args.phyloeffects)
     # check if these directories exist, if not create them
-    for directory in [snp_sites_dir, phyloeffects_dir]:
+    for directory in [phyloeffects_dir]:
         directory.mkdir(parents=True, exist_ok=True)
 
 
-    vcf_file = snp_sites_dir / f"{cluster}.vcf"
-    aln_file = snp_sites_dir / f"{cluster}.fasta"
-    pos_map_file = snp_sites_dir / f"{cluster}_pos_mapping.txt"
+    vcf_file = phyloeffects_dir / f"{cluster}.vcf"
+    aln_file = phyloeffects_dir / f"{cluster}.fasta"
+    pos_map_file = phyloeffects_dir / f"{cluster}_pos_mapping.txt"
 
 
     # check if snp-sites outputs already exist, if not run snp-sites
@@ -101,11 +98,11 @@ def main() -> int:
     print("parse gubbins output")
     parse_gubbins_extract(
         str(gubbins_dir / f"{cluster}.recombination_predictions.gff"),
-        str(snp_sites_dir / f"{cluster}.recombination_prediction.txt"),
+        str(phyloeffects_dir / f"{cluster}.recombination_prediction.txt"),
     )
     summarise_embl_extract(
         str(gubbins_dir / f"{cluster}.branch_base_reconstruction.embl"),
-        str(snp_sites_dir / f"{cluster}.recombination_pos.txt"),
+        str(phyloeffects_dir / f"{cluster}.recombination_pos.txt"),
     )
 
     print("rescale tree")
