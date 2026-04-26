@@ -119,7 +119,7 @@ st_df <- tibble(st = sts)
 
 
 st_df <-
-    mutate(st_df, mutations = str_c(phyloeffects_in, st, ".variant_effect_predictions.txt")) %>%
+    mutate(st_df, mutations = str_c(phyloeffects_in, st, "/" st, ".variant_effect_predictions.txt")) %>%
     mutate(st_df, recombination = str_c(phyloeffects_in, st, ".recombination_prediction.txt")) %>%
     mutate(st_df, recombination_pos = str_c(phyloeffects_in, st, ".recombination_pos.txt"))
 
