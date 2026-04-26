@@ -137,7 +137,7 @@ def main() -> int:
             str(pos_map_file),
             "-g",
             str(args.gff),
-            "--output-prefix",
+            "--output_prefix",
             cluster,
         ]
     )
