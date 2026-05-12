@@ -213,7 +213,7 @@ def run_with_args(args):
     elif args.alignment:
         position_translation = rs.convert_translation(args.conversion)
     else:
-        position_translation = rs.all_sites_translation(ref)
+        position_translation = rs.all_sites_translation([ref])
 
     # Extract the sequence of the reference and ensure it is uppercase
     ref_seq = ref.seq.upper()
@@ -255,7 +255,7 @@ def run_with_args(args):
         if not args.vcf and not args.variant_table:
             args.alignment.seek(0, 0)
         reference_sequence = next(SeqIO.parse(args.reference.name, "fasta"))
-        reference_sequence = reference_sequence[0].seq.upper()
+        reference_sequence = reference_sequence.seq.upper()
     else:
         if args.reference:
             reference_sequence = rs.get_reference(args.reference, args.all_sites, alignment, position_translation)
