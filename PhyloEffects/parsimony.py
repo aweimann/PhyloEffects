@@ -10,10 +10,11 @@ def parse():
     parser.add_argument("outdir", help="isolate group specific nodes out")
     parser.add_argument("--tree_is_named", action = "store_true", help = "set if tree has internal node names")
     parser.add_argument("--is_transposed", action = "store_true", help = "set to indicate input is genes (rows) X samples (columns) like in Panaroo presence/absence")
+    parser.add_argument("--prefix", type=str, required=True, help="prefix for output files")
     args = parser.parse_args()
     parsimony(**vars(args))
 
-def parsimony(tree, table, outdir, tree_is_named, is_transposed):
+def parsimony(tree, table, outdir, tree_is_named, is_transposed, prefix):
     t = ete.Tree(tree, format=1)
     i = 0
     if not tree_is_named:
@@ -21,7 +22,7 @@ def parsimony(tree, table, outdir, tree_is_named, is_transposed):
             if not n.is_leaf():
                 i += 1
                 n.name = "N%s" % i
-        t.write(outfile = outdir + "/named_tree.nwk", format = 1)
+        t.write(outfile = f"{outdir}/{prefix}.named_tree.nwk", format = 1)
 
     table = pd.read_csv(table, index_col = 0, sep = "\t")
     if is_transposed:
@@ -34,17 +35,19 @@ def parsimony(tree, table, outdir, tree_is_named, is_transposed):
                              index=node_names, columns=table.columns)
     if not os.path.exists(outdir):
         os.mkdir(outdir)
-    events = open(f"{outdir}/events.txt", 'w')
+
+    events = open(f"{outdir}/{prefix}.indel_events.txt", 'w')
     events.write("variant_id\tnode\tparent_node\tnode_state\tparent_node_state\n")
     for c in table.columns:
         if all(pd.isnull(table.loc[:, c])) | all(table.loc[:, c] == float('inf')):
-            out_table.loc[:, c] = np.nan 
+            out_table.loc[:, c] = np.nan
         else:
             node2state = down_pass(t, table.loc[:, c])
-            reconstruction = up_pass(node2state, t, c, events) 
+            reconstruction = up_pass(node2state, t, c, events)
             out_table.loc[reconstruction.keys(), c] = list(reconstruction.values())
     events.close()
-    out_table.to_csv("%s/ancestral_states.txt" % outdir, sep = "\t")
+
+    out_table.to_csv(f"{outdir}/{prefix}.ancestral_states.txt", sep = "\t")
 
 def up_pass(node2state, tree, c, events):
     reconstruction = {}

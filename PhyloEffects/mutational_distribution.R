@@ -111,31 +111,48 @@ no_recombination_removal <- opt$no_recombination_removal
 annot <- read_tsv(gene_annotation)
 
 # remove tRNA, rRNA and transposases
-annot <- annot %>% filter(!(feature %in% c("rRNA", "tRNA")) ) %>% 
-  filter(!str_detect(product, "transposase"))
+# annot <- annot %>% filter(!(feature %in% c("rRNA", "tRNA")) ) %>% 
+# filter(!str_detect(product, "transposase"))
 
 sts = c(dataset)
 st_df <- tibble(st = sts)
 
 
 st_df <-
-    mutate(st_df, mutations = str_c(phyloeffects_in, st, "/" st, ".variant_effect_predictions.txt")) %>%
+    mutate(st_df, mutations = str_c(phyloeffects_in, st, "/", st, ".variant_effect_predictions.txt")) %>%
     mutate(st_df, recombination = str_c(phyloeffects_in, st, ".recombination_prediction.txt")) %>%
+    mutate(st_df, indel_events = str_c(phyloeffects_in, st, ".indel_events.txt")) %>%
+    mutate(st_df, indel_variant_effects = str_c(phyloeffects_in, st, ".indel_variant_effect_predictions.txt")) %>%
     mutate(st_df, recombination_pos = str_c(phyloeffects_in, st, ".recombination_pos.txt"))
 
 v <-  st_df %>% select(st, mutations) %>% mutate(mutations = map(mutations, ~ read_tsv(., col_types = cols(.default = col_character(), pos = col_integer())))) %>% unnest(cols = c(mutations))  %>% rename(ref = upstream_aa, alt = downstream_aa)
-v <- v %>% separate_rows(samples, sep = ",") 
+v <- v %>% separate_rows(samples, sep = ",")
 
-#read in indels
-#indels <- st_df %>% select(st, indels) %>%mutate(indels = map(indels, ~ read_tsv(., col_types = cols(.default = col_character()) )))  %>% unnest(cols = c(indels))
-#indels <- indels %>% separate(variant_id, c("pos", "ref", "alt"), sep = "_") %>%
-#    mutate(ref = toupper(ref), alt = toupper(alt), pos = as.double(pos))
-# indels <- indels %>% group_by(pos, ref, alt) %>% add_tally() %>% filter(n == 1)
-# indels <- indels %>% inner_join(effect_indels) %>% select(- parent_node, -node_state, -parent_node_state, -n) %>% rename(mutation_type = eff_type)
-# indels <- indels %>% inner_join(annot)
-
-# v <- bind_rows(v, indels)
-# v <- v %>% filter(impact != "MODIFIER")
+# Read in indels from events and variant effect predictions
+ events <- st_df %>% select(st, indel_events) %>%
+   mutate(indel_events = map(indel_events, ~ read_tsv(., col_types = cols(.default = col_character())))) %>%
+   unnest(cols = c(indel_events))
+ 
+ effect_indels <- st_df %>% select(st, indel_variant_effects) %>%
+   mutate(indel_variant_effects = map(indel_variant_effects, ~ read_tsv(., col_types = cols(.default = col_character(), pos = col_integer())))) %>%
+   unnest(cols = c(indel_variant_effects)) %>%
+   select(-samples)
+ 
+# # Parse variant_id from events (format: NC_009648:pos:ref:alt)
+ events <- events %>%
+   separate(variant_id, c("ref_genome", "pos", "ref", "alt"), sep = ":") %>%
+   mutate(pos = as.integer(pos), ref = toupper(ref), alt = toupper(alt)) %>%
+   rename(samples = node)
+ 
+# # Join events with effect predictions on st, pos, and alleles
+ indels <- events %>%
+   inner_join(effect_indels, by = c("st", "pos", "ref" = "upstream_allele", "alt" = "downstream_allele"), relationship = "many-to-many") %>%
+   select(st, samples, pos, ref, alt, parent_node, node_state, parent_node_state, impact, mutation_type, locus_tag) %>%
+   inner_join(annot) %>%
+   group_by(st, pos, ref, alt) %>% add_tally() %>% filter(n == 1) %>% select(-n) %>% ungroup()
+ 
+ v <- bind_rows(v, indels)
+v <- v %>% filter(impact != "MODIFIER")
 
 #remove recombination sites
 #read in recombination position and interval 
@@ -149,9 +166,8 @@ if (!no_recombination_removal) {
 if (!no_recombination_removal) {
 v_mcs <- v  %>% filter(!is.na(multi_codon_substitution)) %>% mutate(start = pos, end =  pos + 2) %>%  genome_anti_join(recomb_pos %>% mutate(start = pos, end = pos + 1), by = c("st", "start", "end"))  %>% select(-start, -end)
 v <- v %>% filter(is.na(multi_codon_substitution)) %>% anti_join(recomb_pos)
-}
-
 v <- bind_rows(v, v_mcs)
+}
 
 
 v <- v %>% filter(samples != "NC_009648.1")
@@ -170,7 +186,7 @@ v <- v %>% filter(st != "st258" | !(samples %in% c("NC_009648.1", "Node_496", "N
 # intergenic_mutations <- intergenic_mutations   %>%  mutate(pval = poisson.test(n, r=total_mutations[[1]]*(gene_length/(total_length_intergenic[[1]])), alternative = "greater")['p.value'][[1]])
 # intergenic_mutations$padj <- p.adjust(intergenic_mutations$pval, method = "BH")
 # v <- v %>%  filter(mutation_type != "upstream_gene_variant" & mutation_type != "downstream_gene_variant")
-v <- v %>%  filter(mutation_type != "upstream_gene_variant")
+v <- v %>%  filter(mutation_type != "upstream_gene_variant", mutation_type != "downstream_gene_variant")
 
 
 #stratify by synonymous vs. non-synonymous variants 
@@ -248,7 +264,7 @@ gg_qqplot(comb$pval)
 ggsave(str_c(burden_test_out, "/qqplot_poisson_test.pdf"))
 
 burden_variants <- comb %>% filter(padj < 0.05) %>% select(locus_tag)  %>% inner_join(v) %>% filter(impact != "LOW")
-# burden_variants %>% write_tsv("variants_in_burden_hits.txt")
+v %>% write_tsv(str_c(burden_test_out, "variants_in_burden_hits.txt"))
 
 # test internal vs terminal nodes
 is_transmitted <- v %>% filter(mutation_type != "LOW") %>% mutate(is_internal = str_detect(samples, "Node")) %>% 
