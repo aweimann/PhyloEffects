@@ -48,6 +48,62 @@ def write_position_mapping(vcf_path: Path, output_path: Path) -> None:
             idx += 1
 
 
+def process_indels(
+    cluster: str,
+    vcf_file: Path,
+    phyloeffects_dir: Path,
+    gubbins_dir: Path,
+    gff: str,
+    genome: str,
+) -> None:
+    """Process indels from VCF through the indel pipeline."""
+    indels_aggregated = phyloeffects_dir / f"{cluster}_indels_aggregated.tsv"
+    indels_binary_matrix = phyloeffects_dir / f"{cluster}_indels_aggregated_binary_matrix.tsv"
+    indels_predictions = phyloeffects_dir / f"{cluster}.indel_predictions.txt"
+
+    if indels_predictions.exists():
+        print(f"Indel predictions already exist: {indels_predictions}")
+        return
+
+    print("filter indels")
+    run_command([
+        "python",
+        str(Path(__file__).parent / "filter_indels.py"),
+        str(vcf_file),
+        "--output",
+        str(indels_aggregated),
+    ])
+
+    print("PhyloEffects (indels)")
+    run_phyloeffects(
+        [
+            "-vt",
+            str(indels_aggregated),
+            "-o",
+            str(phyloeffects_dir),
+            "--output_prefix",
+            f"{cluster}.indel",
+            "-g",
+            gff,
+            "-r",
+            genome,
+        ]
+    )
+
+    print("parsimony (indels)")
+    run_command([
+        "python",
+        str(Path(__file__).parent / "parsimony.py"),
+        "--is_transposed",
+        str(phyloeffects_dir / f"{cluster}_rescaled.nwk"),
+        str(indels_binary_matrix),
+        "--tree_is_named",
+        str(phyloeffects_dir),
+        "--prefix",
+        cluster,
+    ])
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -61,11 +117,14 @@ def parse_args() -> argparse.Namespace:
         "outgroup",
         help="Outgroup for tree pruning",
     )
-    parser.add_argument("parsimony", help="Parsimony output path (currently unused)")
     parser.add_argument("pseudoalignment", help="Pseudoalignment input path")
     parser.add_argument("phyloeffects", help="Output path for phylogenetic effect outputs")
     parser.add_argument("gff", help="Genome annotation GFF input")
     parser.add_argument("genome", help="Reference genome FASTA input")
+    parser.add_argument(
+        "--process-indels",
+        help="Process indels from VCF file",
+    )
     return parser.parse_args()
 
 
@@ -120,24 +179,39 @@ def main() -> int:
 
     print("PhyloEffects")
     (phyloeffects_dir / cluster).mkdir(parents=True, exist_ok=True)
-    run_phyloeffects(
-        [
-            "-a",
-            str(phyloeffects_dir / f"{cluster}_aln.fasta"),
-            "-t",
-            str(phyloeffects_dir / f"{cluster}_rescaled.nwk"),
-            "-r",
-            str(args.genome),
-            "-o",
-            str(phyloeffects_dir / cluster),
-            "-c",
-            str(pos_map_file),
-            "-g",
-            str(args.gff),
-            "--output_prefix",
+
+    phyloeffects_output = phyloeffects_dir / f"{cluster}.variant_effect_predictions.txt"
+    if not phyloeffects_output.exists():
+        run_phyloeffects(
+            [
+                "-a",
+                str(phyloeffects_dir / f"{cluster}_aln.fasta"),
+                "-t",
+                str(phyloeffects_dir / f"{cluster}_rescaled.nwk"),
+                "-r",
+                str(args.genome),
+                "-o",
+                str(phyloeffects_dir),
+                "-c",
+                str(pos_map_file),
+                "-g",
+                str(args.gff),
+                "--output_prefix",
+                cluster,
+            ]
+        )
+    else:
+        print(f"PhyloEffects output already exists: {phyloeffects_output}")
+
+    if args.process_indels:
+        process_indels(
             cluster,
-        ]
-    )
+            args.process_indels,
+            phyloeffects_dir,
+            gubbins_dir,
+            args.gff,
+            args.genome,
+        )
 
     return 0
 

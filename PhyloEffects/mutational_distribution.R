@@ -93,6 +93,10 @@ parser$add_argument("-a", "--gene_annotation", type = "character", required = TR
                     help = "Gene annotation file in tsv format with columns: locus_tag, gene_name, feature, product, start, end")
 parser$add_argument("-r", "--no_recombination_removal", action = "store_true", default = FALSE,
                     help = "Flag to specify whether to remove recombination regions")
+parser$add_argument("-i", "--include_indels", action = "store_true", default = FALSE,
+                    help = "Flag to specify whether to include indel events")
+parser$add_argument("-t", "--test_intergenic", action = "store_true", default = FALSE,
+                    help = "Flag to specify whether to test intergenic regions")
 
 opt <- parser$parse_args()
 dataset <- opt$dataset
@@ -120,38 +124,43 @@ st_df <- tibble(st = sts)
 
 st_df <-
     mutate(st_df, mutations = str_c(phyloeffects_in, st, "/", st, ".variant_effect_predictions.txt")) %>%
-    mutate(st_df, recombination = str_c(phyloeffects_in, st, ".recombination_prediction.txt")) %>%
-    mutate(st_df, indel_events = str_c(phyloeffects_in, st, ".indel_events.txt")) %>%
-    mutate(st_df, indel_variant_effects = str_c(phyloeffects_in, st, ".indel_variant_effect_predictions.txt")) %>%
-    mutate(st_df, recombination_pos = str_c(phyloeffects_in, st, ".recombination_pos.txt"))
+    mutate(st_df, recombination = str_c(phyloeffects_in, st, "/",st, ".recombination_prediction.txt")) %>%
+    mutate(st_df, indel_events = str_c(phyloeffects_in, st, "/",st, ".indel_events.txt")) %>%
+    mutate(st_df, indel_variant_effects = str_c(phyloeffects_in, st, "/",st, ".indel.variant_effect_predictions.txt")) %>%
+    mutate(st_df, recombination_pos = str_c(phyloeffects_in, st, "/", st, ".recombination_pos.txt"))
 
 v <-  st_df %>% select(st, mutations) %>% mutate(mutations = map(mutations, ~ read_tsv(., col_types = cols(.default = col_character(), pos = col_integer())))) %>% unnest(cols = c(mutations))  %>% rename(ref = upstream_aa, alt = downstream_aa)
 v <- v %>% separate_rows(samples, sep = ",")
 
-# Read in indels from events and variant effect predictions
- events <- st_df %>% select(st, indel_events) %>%
-   mutate(indel_events = map(indel_events, ~ read_tsv(., col_types = cols(.default = col_character())))) %>%
-   unnest(cols = c(indel_events))
- 
- effect_indels <- st_df %>% select(st, indel_variant_effects) %>%
-   mutate(indel_variant_effects = map(indel_variant_effects, ~ read_tsv(., col_types = cols(.default = col_character(), pos = col_integer())))) %>%
-   unnest(cols = c(indel_variant_effects)) %>%
-   select(-samples)
- 
-# # Parse variant_id from events (format: NC_009648:pos:ref:alt)
- events <- events %>%
-   separate(variant_id, c("ref_genome", "pos", "ref", "alt"), sep = ":") %>%
-   mutate(pos = as.integer(pos), ref = toupper(ref), alt = toupper(alt)) %>%
-   rename(samples = node)
- 
-# # Join events with effect predictions on st, pos, and alleles
- indels <- events %>%
-   inner_join(effect_indels, by = c("st", "pos", "ref" = "upstream_allele", "alt" = "downstream_allele"), relationship = "many-to-many") %>%
-   select(st, samples, pos, ref, alt, parent_node, node_state, parent_node_state, impact, mutation_type, locus_tag) %>%
-   inner_join(annot) %>%
-   group_by(st, pos, ref, alt) %>% add_tally() %>% filter(n == 1) %>% select(-n) %>% ungroup()
+
+if (opt$include_indels) {
+  # Read in indels from events and variant effect predictions
+   events <- st_df %>% select(st, indel_events) %>%
+     mutate(indel_events = map(indel_events, ~ read_tsv(., col_types = cols(.default = col_character())))) %>%
+     unnest(cols = c(indel_events))
+  
+   effect_indels <- st_df %>% select(st, indel_variant_effects) %>%
+     mutate(indel_variant_effects = map(indel_variant_effects, ~ read_tsv(., col_types = cols(.default = col_character(), pos = col_integer())))) %>%
+     unnest(cols = c(indel_variant_effects)) %>%
+     select(-samples)
+
+    # # Parse variant_id from events (format: NC_009648:pos:ref:alt)
+   events <- events %>%
+     separate(variant_id, c("ref_genome", "pos", "ref", "alt"), sep = ":") %>%
+     mutate(pos = as.integer(pos), ref = toupper(ref), alt = toupper(alt)) %>%
+     rename(samples = node)
+  
+  # # Join events with effect predictions on st, pos, and alleles
+   indels <- events %>%
+     inner_join(effect_indels, by = c("st", "pos", "ref" = "upstream_allele", "alt" = "downstream_allele"), relationship = "many-to-many") %>%
+     select(st, samples, pos, ref, alt, parent_node, node_state, parent_node_state, impact, mutation_type, locus_tag) %>%
+     inner_join(annot) %>%
+     group_by(st, pos, ref, alt) %>% add_tally() %>% filter(n == 1) %>% select(-n) %>% ungroup()
  
  v <- bind_rows(v, indels)
+ }
+
+# filter variants in intergenic regions
 v <- v %>% filter(impact != "MODIFIER")
 
 #remove recombination sites
@@ -170,11 +179,12 @@ v <- bind_rows(v, v_mcs)
 }
 
 
-v <- v %>% filter(samples != "NC_009648.1")
-v <- v %>% filter(st != "st25" & !(samples %in% c("NC_009648.1", "Node_37", "Node_474", "ERR775516", "Node_476", "Node_461", "Node_475")))
-v <- v %>% filter(st != "st14" & !(samples %in% c("Node_2421")))
-v <- v %>% filter(st != "st258" | !(samples %in% c("NC_009648.1", "Node_496", "Node_498", 
-                                                         "Node_497", "Node_495", "ERR1334502", "ERR1217461")))
+# Klebsiella
+# v <- v %>% filter(samples != "NC_009648.1")
+# v <- v %>% filter(st != "st25" & !(samples %in% c("NC_009648.1", "Node_37", "Node_474", "ERR775516", "Node_476", "Node_461", "Node_475")))
+# v <- v %>% filter(st != "st14" & !(samples %in% c("Node_2421")))
+# v <- v %>% filter(st != "st258" | !(samples %in% c("NC_009648.1", "Node_496", "Node_498", 
+#                                                          "Node_497", "Node_495", "ERR1334502", "ERR1217461")))
 
 
 #intergenic mutations
@@ -187,6 +197,7 @@ v <- v %>% filter(st != "st258" | !(samples %in% c("NC_009648.1", "Node_496", "N
 # intergenic_mutations$padj <- p.adjust(intergenic_mutations$pval, method = "BH")
 # v <- v %>%  filter(mutation_type != "upstream_gene_variant" & mutation_type != "downstream_gene_variant")
 v <- v %>%  filter(mutation_type != "upstream_gene_variant", mutation_type != "downstream_gene_variant")
+# v <- v %>%  filter(mutation_type == "downstream_gene_variant")
 
 
 #stratify by synonymous vs. non-synonymous variants 
@@ -198,7 +209,7 @@ high <-  v  %>% group_by(locus_tag) %>%   filter(impact != "LOW") %>% count() %>
 comb <- mod %>% full_join(high, by = c("locus_tag")) %>% mutate(n.x = ifelse(is.na(n.x), 0, n.x), n.y = ifelse(is.na(n.y), 0, n.y))
 comb <- comb %>% mutate(dn_ds = n.y/n.x)  %>% mutate(dn_ds = ifelse(is.infinite(dn_ds), n.y, dn_ds ))  %>% arrange(-dn_ds) 
 #stratify between point mutations and structural variation
-mutation_type <- v %>% mutate(mutation_type = "point_mutation") %>%   group_by(locus_tag, mutation_type)  %>%  count()  %>% spread(mutation_type, n, fill = 0)
+mutation_type <- v %>% mutate(mutation_type = ifelse(str_length(ref) != str_length(alt), "indel", "point_mutation")) %>%   group_by(locus_tag, mutation_type)  %>%  count()  %>% spread(mutation_type, n, fill = 0)
 #stratify by impact 
 impact <- v %>%   group_by(locus_tag, impact)  %>% count() %>% spread(impact, n, fill = 0)
 #non-synonymous variants per ST
@@ -221,8 +232,10 @@ comb <- comb %>% left_join(uq_variants) %>%
     mutate(gene_length = end - start, position = start) 
 if("HIGH" %in% colnames(comb)){
   comb <- comb %>% select(locus_tag, n.x, n.y, dn_ds, gene_length,  position, HIGH:point_mutation, unique_variants) 
-}else{
+}else if("MODERATE" %in% colnames(comb)){
   comb <- comb %>% select(locus_tag, n.x, n.y, dn_ds, gene_length,  position, MODERATE:point_mutation, unique_variants) 
+}else{
+  comb <- comb %>% select(locus_tag, n.x, n.y, dn_ds, gene_length,  position, unique_variants) 
 }
 comb <- comb %>% mutate(d.x_mod = n.y * 1000/gene_length) %>% arrange(-d.x_mod) 
 no_mutations <- comb %>% ungroup() %>% summarize(sum(n.y)) %>% as_vector()
@@ -264,7 +277,7 @@ gg_qqplot(comb$pval)
 ggsave(str_c(burden_test_out, "/qqplot_poisson_test.pdf"))
 
 burden_variants <- comb %>% filter(padj < 0.05) %>% select(locus_tag)  %>% inner_join(v) %>% filter(impact != "LOW")
-v %>% write_tsv(str_c(burden_test_out, "variants_in_burden_hits.txt"))
+v %>% write_tsv(str_c(burden_test_out, "/variants_in_burden_hits.txt"))
 
 # test internal vs terminal nodes
 is_transmitted <- v %>% filter(mutation_type != "LOW") %>% mutate(is_internal = str_detect(samples, "Node")) %>% 
