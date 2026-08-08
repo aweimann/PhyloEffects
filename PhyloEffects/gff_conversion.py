@@ -108,14 +108,15 @@ def extract_intergenic_regions(gene_annotation, gene_ranges):
     """
     intergenic_regions = {}
 
+    # Build a mapping of gene_id to chromosome
+    gene_id_to_chr = {}
+    for _, row in gene_ranges.df.iterrows():
+        gene_id_to_chr[row['Id']] = row['Chromosome']
+
     # Group genes by chromosome
     genes_by_chr = {}
     for gene_id, (start, stop, strand, locus_tag, featuretype, attributes) in gene_annotation.items():
-        chr_info = None
-        for feature in gene_ranges.features:
-            if feature.id == gene_id:
-                chr_info = feature.chromosome
-                break
+        chr_info = gene_id_to_chr.get(gene_id)
         if chr_info not in genes_by_chr:
             genes_by_chr[chr_info] = []
         genes_by_chr[chr_info].append((start, stop, gene_id, locus_tag))
