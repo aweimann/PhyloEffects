@@ -119,7 +119,7 @@ def extract_intergenic_regions(gene_annotation, gene_ranges):
         chr_info = gene_id_to_chr.get(gene_id)
         if chr_info not in genes_by_chr:
             genes_by_chr[chr_info] = []
-        genes_by_chr[chr_info].append((start, stop, gene_id, locus_tag))
+        genes_by_chr[chr_info].append((start, stop, strand, gene_id, locus_tag, attributes))
 
     # Sort genes by start position within each chromosome
     for chr_id in genes_by_chr:
@@ -129,8 +129,25 @@ def extract_intergenic_regions(gene_annotation, gene_ranges):
     region_id = 0
     for chr_id, sorted_genes in genes_by_chr.items():
         for i in range(len(sorted_genes) - 1):
-            upstream_start, upstream_stop, upstream_id, upstream_locus = sorted_genes[i]
-            downstream_start, downstream_stop, downstream_id, downstream_locus = sorted_genes[i + 1]
+            upstream_start, upstream_stop, upstream_strand, upstream_id, upstream_locus, upstream_attrs = sorted_genes[i]
+            downstream_start, downstream_stop, downstream_strand, downstream_id, downstream_locus, downstream_attrs = sorted_genes[i + 1]
+
+            # Get gene names if they exist
+            upstream_gene_name = upstream_attrs.get('gene', '')
+            downstream_gene_name = downstream_attrs.get('gene', '')
+
+            # Build descriptor
+            upstream_desc = upstream_locus
+            if upstream_gene_name:
+                upstream_desc += f"({upstream_gene_name})"
+            upstream_desc += f"<{upstream_strand}>"
+
+            downstream_desc = downstream_locus
+            if downstream_gene_name:
+                downstream_desc += f"({downstream_gene_name})"
+            downstream_desc += f"<{downstream_strand}>"
+
+            descriptor = f"{upstream_desc}--{downstream_desc}"
 
             # Define intergenic region: from end of upstream gene to start of downstream gene
             if upstream_stop < downstream_start:
@@ -144,8 +161,13 @@ def extract_intergenic_regions(gene_annotation, gene_ranges):
                     "length": region_end - region_start + 1,
                     "upstream_gene_id": upstream_id,
                     "upstream_locus_tag": upstream_locus,
+                    "upstream_gene_name": upstream_gene_name,
+                    "upstream_strand": upstream_strand,
                     "downstream_gene_id": downstream_id,
-                    "downstream_locus_tag": downstream_locus
+                    "downstream_locus_tag": downstream_locus,
+                    "downstream_gene_name": downstream_gene_name,
+                    "downstream_strand": downstream_strand,
+                    "descriptor": descriptor
                 }
                 region_id += 1
 
@@ -154,7 +176,7 @@ def extract_intergenic_regions(gene_annotation, gene_ranges):
 
 def write_intergenic_regions(intergenic_regions, output_dir):
     with open(output_dir + "intergenic_regions.txt", 'w') as f:
-        f.write("chromosome\tstart\tend\tlength\tupstream_gene_id\tupstream_locus_tag\tdownstream_gene_id\tdownstream_locus_tag\n")
+        f.write("chromosome\tstart\tend\tlength\tupstream_locus_tag\tupstream_gene_name\tupstream_strand\tdownstream_locus_tag\tdownstream_gene_name\tdownstream_strand\tdescriptor\n")
         for region_id in sorted(intergenic_regions.keys(), key=lambda x: int(x.split('_')[1])):
             region = intergenic_regions[region_id]
             f.write("\t".join([
@@ -162,9 +184,12 @@ def write_intergenic_regions(intergenic_regions, output_dir):
                 str(region["start"]),
                 str(region["end"]),
                 str(region["length"]),
-                str(region["upstream_gene_id"]),
                 str(region["upstream_locus_tag"]),
-                str(region["downstream_gene_id"]),
-                str(region["downstream_locus_tag"])
+                str(region["upstream_gene_name"]),
+                str(region["upstream_strand"]),
+                str(region["downstream_locus_tag"]),
+                str(region["downstream_gene_name"]),
+                str(region["downstream_strand"]),
+                str(region["descriptor"])
             ]) + "\n")
 
