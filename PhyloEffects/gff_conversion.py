@@ -21,7 +21,7 @@ def clean_gff_string(gff_string):
 
 #Takes a GFF file and returns a list of lists
 #Each entry in list is a gene with 4 components - gene name, gene start, gene end, strand
-def convertGFF(gff_file_name):
+def convertGFF(gff_file_name, output_dir):
     if gff_file_name.endswith(".gz"):
         gff_file = gzip.open(gff_file_name, "rt", encoding='utf-8')
     else:
@@ -78,5 +78,92 @@ def convertGFF(gff_file_name):
             pyr_id.append(entry.id)
 
     gene_ranges = pyranges.from_dict({"Chromosome": pyr_chr, "Start": pyr_start, "End": pyr_stop, "Id": pyr_id})
+    write_gene_annotation(gene_annotation, attributes_header, output_dir)
+    return gene_annotation, gene_ranges
 
-    return(gene_annotation, gene_ranges, attributes_header)
+
+def write_gene_annotation(gene_coordinates, attribute_header, output_dir):
+    with open(output_dir + "gene_annotation.txt", 'w') as f:
+        # header
+        f.write("start\tend\tstrand\tlocus_tag\tfeature")
+        # add attribute header
+        for attr in attribute_header:
+            f.write("\t" + attr)
+        f.write("\n")
+        for value_list in gene_coordinates.values():
+            f.write("\t".join([str(i) for i in value_list[0:5]]))
+            # add attributes
+            for attr in attribute_header:
+                if attr in value_list[5]:
+                    f.write("\t" + value_list[5][attr])
+                else:
+                    f.write("\t")
+            f.write("\n")
+
+
+def extract_intergenic_regions(gene_annotation, gene_ranges):
+    """
+    Extract intergenic regions from parsed GFF data.
+    Returns a dictionary with intergenic region info: upstream_gene, downstream_gene, start, end.
+    """
+    intergenic_regions = {}
+
+    # Group genes by chromosome
+    genes_by_chr = {}
+    for gene_id, (start, stop, strand, locus_tag, featuretype, attributes) in gene_annotation.items():
+        chr_info = None
+        for feature in gene_ranges.features:
+            if feature.id == gene_id:
+                chr_info = feature.chromosome
+                break
+        if chr_info not in genes_by_chr:
+            genes_by_chr[chr_info] = []
+        genes_by_chr[chr_info].append((start, stop, gene_id, locus_tag))
+
+    # Sort genes by start position within each chromosome
+    for chr_id in genes_by_chr:
+        genes_by_chr[chr_id].sort(key=lambda x: x[0])
+
+    # Extract intergenic regions
+    region_id = 0
+    for chr_id, sorted_genes in genes_by_chr.items():
+        for i in range(len(sorted_genes) - 1):
+            upstream_start, upstream_stop, upstream_id, upstream_locus = sorted_genes[i]
+            downstream_start, downstream_stop, downstream_id, downstream_locus = sorted_genes[i + 1]
+
+            # Define intergenic region: from end of upstream gene to start of downstream gene
+            if upstream_stop < downstream_start:
+                region_start = upstream_stop + 1
+                region_end = downstream_start - 1
+
+                intergenic_regions[f"intergenic_{region_id}"] = {
+                    "chromosome": chr_id,
+                    "start": region_start,
+                    "end": region_end,
+                    "length": region_end - region_start + 1,
+                    "upstream_gene_id": upstream_id,
+                    "upstream_locus_tag": upstream_locus,
+                    "downstream_gene_id": downstream_id,
+                    "downstream_locus_tag": downstream_locus
+                }
+                region_id += 1
+
+    return intergenic_regions
+
+
+def write_intergenic_regions(intergenic_regions, output_dir):
+    with open(output_dir + "intergenic_regions.txt", 'w') as f:
+        f.write("chromosome\tstart\tend\tlength\tupstream_gene_id\tupstream_locus_tag\tdownstream_gene_id\tdownstream_locus_tag\n")
+        for region_id in sorted(intergenic_regions.keys(), key=lambda x: int(x.split('_')[1])):
+            region = intergenic_regions[region_id]
+            f.write("\t".join([
+                str(region["chromosome"]),
+                str(region["start"]),
+                str(region["end"]),
+                str(region["length"]),
+                str(region["upstream_gene_id"]),
+                str(region["upstream_locus_tag"]),
+                str(region["downstream_gene_id"]),
+                str(region["downstream_locus_tag"])
+            ]) + "\n")
+

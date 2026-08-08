@@ -179,23 +179,11 @@ def run_with_args(args):
 
     print("Alignment and tree imported. Reconstructing variant effects")
 
-    gene_coordinates, position_gene, attribute_header = gff_conversion.convertGFF(args.gff.name)
-    with open(args.output_dir + "gene_annotation.txt", 'w') as f:
-        # header
-        f.write("start\tend\tstrand\tlocus_tag\tfeature")
-        # add attribute header
-        for attr in attribute_header:
-            f.write("\t" + attr)
-        f.write("\n")
-        for value_list in gene_coordinates.values():
-            f.write("\t".join([str(i) for i in value_list[0:5]]))
-            # add attributes
-            for attr in attribute_header:
-                if attr in value_list[5]:
-                    f.write("\t" + value_list[5][attr])
-                else:
-                    f.write("\t")
-            f.write("\n")
+    gene_coordinates, position_gene = gff_conversion.convertGFF(args.gff.name, args.output_dir)
+
+    # Extract and write intergenic regions
+    intergenic_regions = gff_conversion.extract_intergenic_regions(gene_coordinates, position_gene)
+    gff_conversion.write_intergenic_regions(intergenic_regions, args.output_dir)
 
 
     #labelled_tree, tree_labels = labelAllBranches(tree)
